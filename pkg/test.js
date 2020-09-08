@@ -1,5 +1,5 @@
 import init, { render_func } from './ray_rust_wasm.js'
-import { deserialize_string } from './ray_rust_wasm.js';
+import { deserialize_string, turing } from './ray_rust_wasm.js';
 
 async function run() {
   await init()
@@ -39,15 +39,19 @@ async function run() {
     console.timeEnd('Rendering in Rust')
   }
 
+  var label = document.getElementById('label');
+
   function startAnimation(){
     console.time('Rendering in Rust')
     try{
-      deserialize_string(yamlText, canvasSize.width, canvasSize.height,
-        data => {
-            ctx.putImageData(data, 0, 0);
-            const animateCheckbox = document.getElementById("animate");
-            return !animateCheckbox.checked;
-        });
+    //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
+        turing(canvasSize.width, canvasSize.height,
+            (data, average) => {
+                ctx.putImageData(data, 0, 0);
+                label.innerHTML = average;
+                const animateCheckbox = document.getElementById("animate");
+                return !animateCheckbox.checked;
+            });
     }
     catch(e){
         console.log("Rendering error: " + e);
@@ -60,7 +64,6 @@ async function run() {
         startAnimation();
   }
 
-  var label = document.getElementById('label');
   var buttonStates = {
       w: false,
       s: false,

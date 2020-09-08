@@ -3,6 +3,10 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_yaml;
+extern crate console_error_panic_hook;
+extern crate libm;
+use std::panic;
+use std::cmp;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,6 +24,7 @@ use render::{RenderColor,
     render, hermite_interpolate};
 use vec3::Vec3;
 use quat::Quat;
+use rand::prelude::*;
 
 mod render;
 mod vec3;
@@ -37,6 +42,9 @@ macro_rules! console_log {
     ($fmt:expr, $($arg1:expr),*) => {
         log(&format!($fmt, $($arg1),+))
     };
+    ($fmt:expr) => {
+        log($fmt)
+    }
 }
 
 #[wasm_bindgen]
@@ -305,3 +313,152 @@ pub fn deserialize_string(save_data: &str, width: usize, height: usize, callback
     Ok(())
 }
 
+struct Xor128{
+    x: u32
+}
+
+impl Xor128{
+    fn new(seed: u32) -> Self{
+        let mut ret = Xor128{x: 2463534242};
+        if 0 < seed{
+            ret.x ^= (seed & 0xffffffff) >> 0;
+            ret.nexti();
+        }
+        ret.nexti();
+        ret
+    }
+
+    fn nexti(&mut self) -> u32{
+        // We must bitmask and logical shift to simulate 32bit unsigned integer's behavior.
+        // The optimizer is likely to actually make it uint32 internally (hopefully).
+        // T = (I + L^a)(I + R^b)(I + L^c)
+        // a = 13, b = 17, c = 5
+        let x1 = ((self.x ^ (self.x << 13)) & 0xffffffff) >> 0;
+        let x2 = ((x1 ^ (x1 >> 17)) & 0xffffffff) >> 0;
+        self.x = ((x2 ^ (x2 << 5)) & 0xffffffff) >> 0;
+        self.x
+    }
+}
+
+#[wasm_bindgen]
+pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+    let mut u = vec![0f64; 4 * width * height];
+    let mut v = vec![0f64; 4 * width * height];
+    let mut data = vec![0u8; 4 * width * height];
+
+    let mut xor128 = Xor128::new(123);
+
+    const uMax: f64 = 7.5;
+    const vMax: f64 = 10.0;
+
+    for y in 0..height {
+        for x in 0..width {
+            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax;
+        }
+    }
+
+    let mut render = |height, width, data: &mut Vec<u8>, u: &mut Vec<f64>, v: &mut Vec<f64>| {
+        for y in 0..height {
+            for x in 0..width {
+                data[(x + y * width) * 4    ] = (u[x + y * width] / uMax * 127.) as u8;
+                data[(x + y * width) * 4 + 1] = (v[x + y * width] / vMax * 127.) as u8;
+                data[(x + y * width) * 4 + 2] = 0;
+                data[(x + y * width) * 4 + 3] = 255;
+            }
+        }
+    };
+
+    const factor: f64 = 1e-2;
+    const Au: f64 = 0.08;
+    const Bu: f64 = -0.08;
+    const Cu: f64 = 0.04;
+    const Du: f64 = 0.03 * factor;
+    const Av: f64 = 0.1;
+    const Bv: f64 = 0.0;
+    const Cv: f64 = -0.15;
+    const Dv: f64 = 0.08 * factor;
+
+    fn diverge(width: usize, height: usize, u: &mut Vec<f64>){
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                u[x + y * width] = {
+                    let mut accum = 0.;
+                    for xx in -1..2 {
+                        for yy in -1..2{
+                            if xx != 0 || yy != 0 {
+                                accum += u[(x as isize + xx) as usize + ((y as isize + yy) as usize * width)];
+                            }
+                        }
+                    }
+                    Du * accum / 8. + (1. - Du) * u[x + y * width]
+                };
+            }
+        }
+    }
+
+    fn react(width: usize, height: usize, u: &mut Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64){
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                u[x + y * width] += factor * (a * u[x + y * width] + b * v[x + y * width] + c);
+            }
+        }
+    }
+
+    fn clip(width: usize, height: usize, u: &mut Vec<f64>, max: f64, min: f64){
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                u[x + y * width] = libm::fmax(libm::fmin(u[x + y * width], max), min);
+            }
+        }
+    }
+
+    render(height, width, &mut data, &mut u, &mut v);
+
+    let func = Rc::new(RefCell::new(None));
+    let g = func.clone();
+
+    let mut i = 0;
+
+    console_log!("Starting frames");
+
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        console_log!("Rendering frame {}", i);
+
+        i += 1;
+
+        diverge(width, height, &mut u);
+        diverge(width, height, &mut v);
+        react(width, height, &mut u, &v, Au, Bu, Cu);
+        react(width, height, &mut v, &u, Av, Bv, Cv);
+        clip(width, height, &mut u, uMax, 0.);
+        clip(width, height, &mut v, vMax, 0.);
+
+        let average = {
+            let mut accum = 0.;
+            for y in 1..height-1 {
+                for x in 1..width-1 {
+                    accum += u[x + y * width];
+                }
+            }
+            accum / (width * height) as f64
+        };
+
+        render(height, width, &mut data, &mut u, &mut v);
+
+        let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
+
+        let terminate_requested = callback.call2(&window(), &JsValue::from(image_data),
+            &JsValue::from(average)).unwrap_or(JsValue::from(true));
+        if terminate_requested.is_truthy() {
+            return
+        }
+
+        // Schedule ourself for another requestAnimationFrame callback.
+        request_animation_frame(func.borrow().as_ref().unwrap());
+    }) as Box<dyn FnMut()>));
+
+    request_animation_frame(g.borrow().as_ref().unwrap());
+
+    Ok(())
+}

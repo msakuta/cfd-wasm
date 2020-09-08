@@ -15,6 +15,9 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.8"
 js-sys = ""
+rand = "0.7.3"
+console_error_panic_hook = "0.1.6"
+libm = "0.1.4"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Oz", "--enable-mutable-globals"]
@@ -23,10 +26,10 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 version = "0.3.4"
 features = [
     'CanvasRenderingContext2d',
-        'Element',
-        'HtmlElement',
-        'Node',
-       'Document',
+    'Element',
+    'HtmlElement',
+    'Node',
+    'Document',
     'ImageData',
     'Window',
 ]
