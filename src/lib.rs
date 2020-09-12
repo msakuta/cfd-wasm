@@ -378,7 +378,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     #[derive(Copy, Clone)]
     struct Params{
-        deltaTime: f64,
+        delta_time: f64,
+        skip_frames: u32,
         f: f64,
         k: f64,
         ru: f64,
@@ -386,24 +387,13 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     }
 
     let mut params = Rc::new(RefCell::new(Params{
-        deltaTime: 1.,
+        delta_time: 1.,
+        skip_frames: 1,
         f: 0.03,
         k: 0.056,
         ru: 0.07,
         rv: 0.056,
     }));
-    const epsilon: f64 = 1.;
-    const Au: f64 = 1.2;
-    const Bu: f64 = 0.5;
-    const Cu: f64 = 0. * 0.04;
-    const Du: f64 = 0.056 / epsilon / epsilon;
-    const Av: f64 = 0. * -0.1;
-    const Bv: f64 = 0.08;
-    const Cv: f64 = 0. * 0.15;
-    const Dv: f64 = 0.09 / epsilon / epsilon;
-    // const F: f64 = 0.03;
-    // const k: f64 = 0.056;
-    const skip: usize = 1;
 
     fn diffuse(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, d: f64){
         let [iwidth, iheight] = [width as isize, height as isize];
@@ -420,29 +410,29 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, params: &Params){
-        for y in 1..height-1 {
-            for x in 1..width-1 {
+    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, params: &Params){
+        for y in 0..height {
+            for x in 0..width {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                u_next[x + y * width] += params.deltaTime * (u_p * u_p * v_p - (params.f + params.k) * u_p);
+                u_next[x + y * width] += params.delta_time * (u_p * u_p * v_p - (params.f + params.k) * u_p);
             }
         }
     }
 
-    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, params: &Params){
-        for y in 1..height-1 {
-            for x in 1..width-1 {
+    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, params: &Params){
+        for y in 0..height {
+            for x in 0..width {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                v_next[x + y * width] += params.deltaTime * (-u_p * u_p * v_p + params.f * (1. - v_p));
+                v_next[x + y * width] += params.delta_time * (-u_p * u_p * v_p + params.f * (1. - v_p));
             }
         }
     }
 
     fn clip(width: usize, height: usize, u: &mut Vec<f64>, max: f64, min: f64){
-        for y in 1..height-1 {
-            for x in 1..width-1 {
+        for y in 0..height {
+            for x in 0..width {
                 u[x + y * width] = libm::fmax(libm::fmin(u[x + y * width], max), min);
             }
         }
@@ -477,19 +467,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mouse_ref = *(*mouse_pos).borrow();
         let params_val = *(*params).borrow();
-        let Params{deltaTime, f, k, ..} = params_val;
-        console_log!("Rendering frame {}, mouse_pos: {}, {} deltaTime: {}, f: {}, k: {}, ru: {}, rv: {}",
-            i, mouse_ref.0, mouse_ref.0, deltaTime, f, k, params_val.ru, params_val.rv);
+        let Params{delta_time, f, k, ..} = params_val;
+        console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
+            i, mouse_ref.0, mouse_ref.0, delta_time, params_val.skip_frames, f, k, params_val.ru, params_val.rv);
 
         i += 1;
 
-        for _ in 0..skip {
+        for _ in 0..params_val.skip_frames {
             let mut u_next = u.clone();
             let mut v_next = v.clone();
-            diffuse(width, height, &mut u_next, &u, &params_val.rv * deltaTime);
-            diffuse(width, height, &mut v_next, &v, &params_val.ru * deltaTime);
-            react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, &params_val);
-            react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, &params_val);
+            diffuse(width, height, &mut u_next, &u, &params_val.rv * delta_time);
+            diffuse(width, height, &mut v_next, &v, &params_val.ru * delta_time);
+            react_u(width, height, &mut u_next, &u, &v, &params_val);
+            react_v(width, height, &mut v_next, &u, &v, &params_val);
             clip(width, height, &mut u, uMax, 0.);
             clip(width, height, &mut v, vMax, 0.);
             u = u_next;
@@ -535,7 +525,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 }
             }
         };
-        assign_state("deltaTime", |params, value| params.deltaTime = value);
+        assign_state("deltaTime", |params, value| params.delta_time = value);
+        assign_state("skipFrames", |params, value| params.skip_frames = value as u32);
         assign_state("f", |params, value| params.f = value);
         assign_state("k", |params, value| params.k = value);
         assign_state("ru", |params, value| params.ru = value);

@@ -13,6 +13,7 @@ async function run() {
   var yaw = -90.;
   var pitch = -90.;
   var deltaTime = 1.0;
+  var skipFrames = 1;
   var f = 0.03;
   var k = 0.056;
   var ru = 0.07;
@@ -44,6 +45,7 @@ async function run() {
     return slider;
   }
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
+  const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
   const fSlider = sliderInit("f", "fLabel", value => f = value);
   const kSlider = sliderInit("k", "kLabel", value => k = value);
   const ruSlider = sliderInit("ru", "ruLabel", value => ru = value);
@@ -107,6 +109,7 @@ async function run() {
                 return {
                     terminate: !animateCheckbox.checked,
                     deltaTime,
+                    skipFrames,
                     f,
                     k,
                     ru,
