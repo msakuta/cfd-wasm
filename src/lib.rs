@@ -354,29 +354,31 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     for y in 0..height {
         for x in 0..width {
-            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax;
+            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax
+                + libm::sin(x as f64 * 0.01 * libm::acos(0.)) * uMax;
+            v[x + y * width] = libm::sin(y as f64 * 0.1 * libm::acos(0.)) * 0.5 * uMax;
         }
     }
 
     let mut render = |height, width, data: &mut Vec<u8>, u: &mut Vec<f64>, v: &mut Vec<f64>| {
         for y in 0..height {
             for x in 0..width {
-                data[(x + y * width) * 4    ] = (u[x + y * width] / uMax * 127.) as u8;
-                data[(x + y * width) * 4 + 1] = (v[x + y * width] / vMax * 127.) as u8;
+                data[(x + y * width) * 4    ] = ((u[x + y * width] + uMax) / 2. / uMax * 127.) as u8;
+                data[(x + y * width) * 4 + 1] = ((v[x + y * width] + uMax) / 2. / vMax * 127.) as u8;
                 data[(x + y * width) * 4 + 2] = 0;
                 data[(x + y * width) * 4 + 3] = 255;
             }
         }
     };
 
-    const factor: f64 = 1e-2;
-    const Au: f64 = 0.08;
+    const factor: f64 = 1e-1;
+    const Au: f64 = 0. * -0.08;
     const Bu: f64 = -0.08;
-    const Cu: f64 = 0.04;
-    const Du: f64 = 0.03 * factor;
-    const Av: f64 = 0.1;
-    const Bv: f64 = 0.0;
-    const Cv: f64 = -0.15;
+    const Cu: f64 = 0. * 0.04;
+    const Du: f64 = 5.03 * factor;
+    const Av: f64 = 0. * -0.1;
+    const Bv: f64 = 0.08;
+    const Cv: f64 = 0. * 0.15;
     const Dv: f64 = 0.08 * factor;
 
     fn diverge(width: usize, height: usize, u: &mut Vec<f64>){
@@ -420,10 +422,32 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     let mut i = 0;
 
+    let mouse_pos = Rc::new(RefCell::new((0, 0)));
+
+    let canvas = document().get_element_by_id("canvas").unwrap().dyn_into::<web_sys::HtmlCanvasElement>()?;
+    let context = canvas.get_context("2d");
+    {
+        let closure = Closure::wrap(Box::new((|mut mouse_pos: Rc<RefCell<(i32, i32)>>| move |event: web_sys::MouseEvent| {
+            if let Ok(mut mut_mouse) = mouse_pos.try_borrow_mut() {
+                *mut_mouse = (event.offset_x(), event.offset_y());
+                console_log!("mousemove detected: {} {}", mut_mouse.0, mut_mouse.1);
+            }
+            else{
+                console_log!("mousemove detected but failed to update");
+            }
+        })(mouse_pos.clone())) as Box<dyn FnMut(_)>);
+        canvas.add_event_listener_with_callback("mousemove", closure.as_ref().unchecked_ref())?;
+        closure.forget();
+    };
+
     console_log!("Starting frames");
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        console_log!("Rendering frame {}", i);
+        let mouse_ref
+         = {
+            *(*mouse_pos).borrow()
+        };
+        console_log!("Rendering frame {}, mouse_pos: {}, {}", i, mouse_ref.0, mouse_ref.0);
 
         i += 1;
 
@@ -431,8 +455,17 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         diverge(width, height, &mut v);
         react(width, height, &mut u, &v, Au, Bu, Cu);
         react(width, height, &mut v, &u, Av, Bv, Cv);
-        clip(width, height, &mut u, uMax, 0.);
-        clip(width, height, &mut v, vMax, 0.);
+        // clip(width, height, &mut u, uMax, 0.);
+        // clip(width, height, &mut v, vMax, 0.);
+
+        let (xx, yy) = mouse_ref;
+        for x in xx-1..xx+2 {
+            for y in yy-1..yy+2 {
+                if 0 <= x && x < width as i32 && 0 <= y && y < height as i32 {
+                    u[x as usize + y as usize * width] = uMax;
+                }
+            }
+        }
 
         let average = {
             let mut accum = 0.;
