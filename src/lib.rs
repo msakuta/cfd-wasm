@@ -349,14 +349,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     let mut xor128 = Xor128::new(123);
 
-    const uMax: f64 = 7.5;
-    const vMax: f64 = 10.0;
+    const uMax: f64 = 1.0;
+    const vMax: f64 = 1.0;
 
     for y in 0..height {
         for x in 0..width {
-            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax
-                + libm::sin(x as f64 * 0.01 * libm::acos(0.)) * uMax;
-            v[x + y * width] = libm::sin(y as f64 * 0.1 * libm::acos(0.)) * 0.5 * uMax;
+            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax;
+                // + libm::sin(x as f64 * 0.05 * libm::acos(0.)) * uMax;
+            // v[x + y * width] = libm::sin((x as f64 * 0.05 + 0.5) * libm::acos(0.)) * 0.5 * uMax;
         }
     }
 
@@ -371,17 +371,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     };
 
-    const factor: f64 = 1e-1;
-    const Au: f64 = 0. * -0.08;
-    const Bu: f64 = -0.08;
+    const factor: f64 = 1e-2;
+    const epsilon: f64 = 0.1;
+    const Au: f64 = 1.2;
+    const Bu: f64 = 0.5;
     const Cu: f64 = 0. * 0.04;
-    const Du: f64 = 5.03 * factor;
+    const Du: f64 = 0.006 * factor / epsilon / epsilon;
     const Av: f64 = 0. * -0.1;
     const Bv: f64 = 0.08;
     const Cv: f64 = 0. * 0.15;
-    const Dv: f64 = 0.08 * factor;
+    const Dv: f64 = 0.07 * factor / epsilon / epsilon;
+    const skip: usize = 10;
 
-    fn diverge(width: usize, height: usize, u: &mut Vec<f64>){
+    fn diverge(width: usize, height: usize, u: &mut Vec<f64>, d: f64){
         for y in 1..height-1 {
             for x in 1..width-1 {
                 u[x + y * width] = {
@@ -393,16 +395,28 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                             }
                         }
                     }
-                    Du * accum / 8. + (1. - Du) * u[x + y * width]
+                    d * accum / 8. + (1. - d) * u[x + y * width]
                 };
             }
         }
     }
 
-    fn react(width: usize, height: usize, u: &mut Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64){
+    fn react_u(width: usize, height: usize, u: &mut Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64){
         for y in 1..height-1 {
             for x in 1..width-1 {
-                u[x + y * width] += factor * (a * u[x + y * width] + b * v[x + y * width] + c);
+                let u_p = u[x + y * width];
+                let v_p = v[x + y * width];
+                u[x + y * width] += factor * (u_p - libm::pow(u_p, 3.0) - v_p);
+            }
+        }
+    }
+
+    fn react_v(width: usize, height: usize, v: &mut Vec<f64>, u: &Vec<f64>, a: f64, b: f64, c: f64){
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                let u_p = u[x + y * width];
+                let v_p = v[x + y * width];
+                v[x + y * width] += factor * (a * (u_p - b * v_p - c));
             }
         }
     }
@@ -425,7 +439,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     let mouse_pos = Rc::new(RefCell::new((0, 0)));
 
     let canvas = document().get_element_by_id("canvas").unwrap().dyn_into::<web_sys::HtmlCanvasElement>()?;
-    let context = canvas.get_context("2d");
     {
         let closure = Closure::wrap(Box::new((|mut mouse_pos: Rc<RefCell<(i32, i32)>>| move |event: web_sys::MouseEvent| {
             if let Ok(mut mut_mouse) = mouse_pos.try_borrow_mut() {
@@ -443,20 +456,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     console_log!("Starting frames");
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        let mouse_ref
-         = {
-            *(*mouse_pos).borrow()
-        };
+        let mouse_ref = *(*mouse_pos).borrow();
         console_log!("Rendering frame {}, mouse_pos: {}, {}", i, mouse_ref.0, mouse_ref.0);
 
         i += 1;
 
-        diverge(width, height, &mut u);
-        diverge(width, height, &mut v);
-        react(width, height, &mut u, &v, Au, Bu, Cu);
-        react(width, height, &mut v, &u, Av, Bv, Cv);
-        // clip(width, height, &mut u, uMax, 0.);
-        // clip(width, height, &mut v, vMax, 0.);
+        for _ in 0..skip {
+            diverge(width, height, &mut u, Du);
+            diverge(width, height, &mut v, Dv);
+            react_u(width, height, &mut u, &v, Au, Bu, Cu);
+            react_v(width, height, &mut v, &u, Au, Bu, Cu);
+            // clip(width, height, &mut u, uMax, 0.);
+            // clip(width, height, &mut v, vMax, 0.);
+        }
 
         let (xx, yy) = mouse_ref;
         for x in xx-1..xx+2 {
