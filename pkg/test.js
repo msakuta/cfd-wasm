@@ -19,14 +19,6 @@ async function run() {
   var rv = 0.056;
 
   const ctx = canvas.getContext('2d');
-  const imageData = ctx.createImageData(canvasSize.width, canvasSize.height);
-
-  const yaml = await fetch("./out.yaml");
-
-  if (!yaml.ok || yaml.status !== 200)
-    return;
-
-  const yamlText = await yaml.text();
 
   const animateCheckbox = document.getElementById("animate");
   const sliderUpdater = [];
