@@ -340,6 +340,7 @@ impl Xor128{
     }
 }
 
+#[allow(non_upper_case_globals)]
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -354,7 +355,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     for y in 0..height {
         for x in 0..width {
-            u[x + y * width] = xor128.nexti() as f64 / 0xffffffffu32 as f64 * uMax;
+            u[x + y * width] = (xor128.nexti() as f64 / 0xffffffffu32 as f64 - 0.5) * uMax;
                 // + libm::sin(x as f64 * 0.05 * libm::acos(0.)) * uMax;
             // v[x + y * width] = libm::sin((x as f64 * 0.05 + 0.5) * libm::acos(0.)) * 0.5 * uMax;
         }
