@@ -1,12 +1,12 @@
 ![Rust-wasm](https://github.com/msakuta/ray-rust-wasm/workflows/Rust-wasm/badge.svg)
 
-# ray-rust-wasm
+# rd-system-wasm
 
-Webassembly port of [ray-rust](https://github.com/msakuta/ray-rust) project.
+Reaction-Diffusion system simulation with Webassembly and Rust.
 
 Try it now with your browser!
 
-https://msakuta.github.io/ray-rust-wasm/
+https://msakuta.github.io/rd-system-wasm/
 
 ## How to build and run
 
