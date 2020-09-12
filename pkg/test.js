@@ -80,6 +80,26 @@ async function run() {
     sliderUpdater.forEach(update => update());
   })
 
+  const buttonElastic = document.getElementById("buttonElastic");
+  buttonElastic.addEventListener("click", (event) => {
+    deltaTimeSlider.value = 1.;
+    fSlider.value = 0.023;
+    kSlider.value = 0.052;
+    ruSlider.value = 0.076;
+    rvSlider.value = 0.074;
+    sliderUpdater.forEach(update => update());
+  })
+
+  const buttonCells = document.getElementById("buttonCells");
+  buttonCells.addEventListener("click", (event) => {
+    deltaTimeSlider.value = 1.;
+    fSlider.value = 0.023;
+    kSlider.value = 0.054;
+    ruSlider.value = 0.09;
+    rvSlider.value = 0.072;
+    sliderUpdater.forEach(update => update());
+  })
+
   var label = document.getElementById('label');
 
   function startAnimation(){
