@@ -1,0 +1,244 @@
+---
+camera:
+  position:
+    x: 0.0
+    y: -150.0
+    z: -500.0
+  pyr:
+    x: 0.
+    y: -1.5707963705062867
+    z: -1.5707963705062867
+camera_motion:
+  - camera:
+      position:
+        x: 500.0
+        y: -150.0
+        z: 0.0
+      pyr:
+        x: 0.
+        y: 3.14159265358979
+        z: -1.5707963705062867
+    velocity:
+      x: 0.0
+      y: 0.0
+      z: 1000.0
+    camera_target:
+      x: 0.0
+      y: -150.0
+      z: 0.0
+    duration: 10
+  - camera:
+      position:
+        x: 0.0
+        y: -150.0
+        z: 500.0
+      pyr:
+        x: 0.0
+        y: 1.5707963705062867
+        z: -1.5707963705062867
+    velocity:
+      x: -1000.0
+      y: 0.0
+      z: 0.0
+    camera_target:
+      x: 0.0
+      y: -150.0
+      z: 0.0
+    duration: 10
+  - camera:
+      position:
+        x: -500.0
+        y: -150.0
+        z: 0.0
+      pyr:
+        x: 0.0
+        y: 0.
+        z: -1.5707963705062867
+    velocity:
+      x: 0.0
+      y: 0.0
+      z: -1000.0
+    camera_target:
+      x: 0.0
+      y: -150.0
+      z: 0.0
+    duration: 10
+  - camera:
+      position:
+        x: 0.0
+        y: -150.0
+        z: -500.0
+      pyr:
+        x: 0.
+        y: -1.5707963705062867
+        z: -1.5707963705062867
+    velocity:
+      x: 1000.0
+      y: 0.0
+      z: 0.0
+    camera_target:
+      x: 0.0
+      y: -150.0
+      z: 0.0
+    duration: 10
+  - camera:
+      position:
+        x: 0.0
+        y: -250.0
+        z: 0.0
+      pyr:
+        x: 0.
+        y: -1.5707963705062867
+        z: -1.5707963705062867
+    velocity:
+      x: 0.0
+      y: -100.0
+      z: 1000.0
+    camera_target:
+      x: 0.0
+      y: -150.0
+      z: 0.0
+    duration: 10
+light:
+  x: 50.
+  y: 60.
+  z: -50.
+max_reflections: 10
+max_refractions: 10
+materials:
+  mirror:
+    name: mirror
+    diffuse:
+      r: 0.0
+      g: 0.0
+      b: 0.0
+    specular:
+      r: 1.0
+      g: 1.0
+      b: 1.0
+    pn: 24
+    t: 0.0
+    n: 0.0
+    glow_dist: 0.0
+    frac:
+      r: 1.0
+      g: 1.0
+      b: 1.0
+    pattern: Solid
+    pattern_scale: 1.0
+    pattern_angle_scale: 1.0
+    texture_name: ""
+    texture_filter: Nearest
+  red:
+    name: red
+    diffuse:
+      r: 0.800000011920929
+      g: 0.0
+      b: 0.0
+    specular:
+      r: 0.0
+      g: 0.0
+      b: 0.0
+    pn: 24
+    t: 0.0
+    n: 0.0
+    glow_dist: 25.0
+    frac:
+      r: 1.0
+      g: 1.0
+      b: 1.0
+    pattern: Solid
+    pattern_scale: 1.0
+    pattern_angle_scale: 3.14159265359
+    texture_name: D:\projects\gltestplus\textures\earth.jpg
+    texture_filter: Bilinear
+  floor:
+    name: floor
+    diffuse:
+      r: 1.0
+      g: 1.0
+      b: 0.0
+    specular:
+      r: 0.0
+      g: 0.0
+      b: 0.0
+    pn: 0
+    t: 0.0
+    n: 0.0
+    glow_dist: 0.0
+    frac:
+      r: 1.0
+      g: 1.0
+      b: 1.0
+    pattern: RepeatedGradation
+    pattern_scale: 300.0
+    pattern_angle_scale: 0.20000000298023225
+    texture_name: ""
+    texture_filter: Nearest
+  transparent:
+    name: transparent
+    diffuse:
+      r: 0.0
+      g: 0.0
+      b: 0.0
+    specular:
+      r: 0.0
+      g: 0.0
+      b: 0.0
+    pn: 0
+    t: 1.
+    n: 1.5
+    glow_dist: 0.0
+    frac:
+      r: 1.4999799728393555
+      g: 1.4999899864196778
+      b: 1.5
+    pattern: Solid
+    pattern_scale: 1.0
+    pattern_angle_scale: 1.0
+    texture_name: ""
+    texture_filter: Nearest
+objects:
+  - Floor:
+      material: floor
+      org:
+        x: 0.0
+        y: -300.0
+        z: 0.0
+      face_normal:
+        x: 0.0
+        y: 1.0
+        z: 0.0
+      uvmap: ZX
+  - Sphere:
+      material: mirror
+      r: 150.0
+      org:
+        x: 0.0
+        y: -30.0
+        z: 20.0
+      uvmap: XY
+  - Sphere:
+      material: mirror
+      r: 80.0
+      org:
+        x: -200.0
+        y: -30.0
+        z: -50.0
+      uvmap: XY
+  - Sphere:
+      material: red
+      r: 100.0
+      org:
+        x: -200.0
+        y: -200.0
+        z: -50.0
+      uvmap: LL
+  - Sphere:
+      material: transparent
+      r: 100.0
+      org:
+        x: 170.0
+        y: -200.0
+        z: -50.0
+      uvmap: XY
