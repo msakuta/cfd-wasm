@@ -69,6 +69,16 @@ async function run() {
     sliderUpdater.forEach(update => update());
   })
 
+  const buttonWavyStripes = document.getElementById("buttonWavyStripes");
+  buttonWavyStripes.addEventListener("click", (event) => {
+    factorSlider.value = 1.;
+    fSlider.value = 0.023;
+    kSlider.value = 0.052;
+    ruSlider.value = 0.03;
+    rvSlider.value = 0.028;
+    sliderUpdater.forEach(update => update());
+  })
+
   function renderCanvas(){
     if(animateCheckbox.checked)
         return;
