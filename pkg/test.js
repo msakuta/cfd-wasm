@@ -12,6 +12,7 @@ async function run() {
   var z = -300.;
   var yaw = -90.;
   var pitch = -90.;
+  var factor = 1.0;
 
   const ctx = canvas.getContext('2d');
   const imageData = ctx.createImageData(canvasSize.width, canvasSize.height);
@@ -24,6 +25,13 @@ async function run() {
   const yamlText = await yaml.text();
 
   const animateCheckbox = document.getElementById("animate");
+  const factorSlider = document.getElementById("factor");
+  const factorLabel = document.getElementById("factorLabel");
+
+  factorSlider.addEventListener("input", (event) => {
+      factorLabel.innerHTML = factorSlider.value;
+      factor = factorSlider.value;
+  })
 
   function renderCanvas(){
     if(animateCheckbox.checked)
@@ -50,7 +58,10 @@ async function run() {
                 ctx.putImageData(data, 0, 0);
                 label.innerHTML = average;
                 const animateCheckbox = document.getElementById("animate");
-                return !animateCheckbox.checked;
+                return {
+                    terminate: !animateCheckbox.checked,
+                    factor: parseFloat(factor)
+                };
             });
     }
     catch(e){

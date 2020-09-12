@@ -376,16 +376,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     };
 
-    const factor: f64 = 1.;
+    let mut factor_rc = Rc::new(RefCell::new(1.));
     const epsilon: f64 = 1.;
     const Au: f64 = 1.2;
     const Bu: f64 = 0.5;
     const Cu: f64 = 0. * 0.04;
-    const Du: f64 = 0.056 * factor / epsilon / epsilon;
+    const Du: f64 = 0.056 / epsilon / epsilon;
     const Av: f64 = 0. * -0.1;
     const Bv: f64 = 0.08;
     const Cv: f64 = 0. * 0.15;
-    const Dv: f64 = 0.09 * factor / epsilon / epsilon;
+    const Dv: f64 = 0.09 / epsilon / epsilon;
     const F: f64 = 0.03;
     const k: f64 = 0.056;
     const skip: usize = 1;
@@ -405,7 +405,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64){
+    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, factor: f64){
         for y in 1..height-1 {
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
@@ -415,7 +415,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64){
+    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, factor: f64){
         for y in 1..height-1 {
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
@@ -461,17 +461,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mouse_ref = *(*mouse_pos).borrow();
-        console_log!("Rendering frame {}, mouse_pos: {}, {}", i, mouse_ref.0, mouse_ref.0);
+        let factor = *(*factor_rc).borrow();
+        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}", i, mouse_ref.0, mouse_ref.0, factor);
 
         i += 1;
 
         for _ in 0..skip {
             let mut u_next = u.clone();
             let mut v_next = v.clone();
-            diffuse(width, height, &mut u_next, &u, Du);
-            diffuse(width, height, &mut v_next, &v, Dv);
-            react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu);
-            react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu);
+            diffuse(width, height, &mut u_next, &u, Du * factor);
+            diffuse(width, height, &mut v_next, &v, Dv * factor);
+            react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, factor);
+            react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, factor);
             clip(width, height, &mut u, uMax, 0.);
             clip(width, height, &mut v, vMax, 0.);
             u = u_next;
@@ -501,10 +502,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
-        let terminate_requested = callback.call2(&window(), &JsValue::from(image_data),
+        let callback_ret = callback.call2(&window(), &JsValue::from(image_data),
             &JsValue::from(average)).unwrap_or(JsValue::from(true));
+        let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
+            .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
             return
+        }
+        if let Ok(new_factor) = js_sys::Reflect::get(&callback_ret, &JsValue::from("factor")) {
+            if let Some(the_factor) = new_factor.as_f64() {
+                console_log!("received factor value: {}", the_factor);
+                *(*factor_rc).borrow_mut() = the_factor;
+            }
         }
 
         // Schedule ourself for another requestAnimationFrame callback.
