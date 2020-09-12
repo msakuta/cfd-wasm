@@ -381,12 +381,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         factor: f64,
         f: f64,
         k: f64,
+        ru: f64,
+        rv: f64,
     }
 
     let mut params = Rc::new(RefCell::new(Params{
         factor: 1.,
         f: 0.03,
         k: 0.056,
+        ru: 0.07,
+        rv: 0.056,
     }));
     const epsilon: f64 = 1.;
     const Au: f64 = 1.2;
@@ -473,17 +477,17 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mouse_ref = *(*mouse_pos).borrow();
         let params_val = *(*params).borrow();
-        let Params{factor, f, k} = params_val;
-        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}, f: {}, k: {}",
-            i, mouse_ref.0, mouse_ref.0, factor, f, k);
+        let Params{factor, f, k, ..} = params_val;
+        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}, f: {}, k: {}, ru: {}, rv: {}",
+            i, mouse_ref.0, mouse_ref.0, factor, f, k, params_val.ru, params_val.rv);
 
         i += 1;
 
         for _ in 0..skip {
             let mut u_next = u.clone();
             let mut v_next = v.clone();
-            diffuse(width, height, &mut u_next, &u, Du * factor);
-            diffuse(width, height, &mut v_next, &v, Dv * factor);
+            diffuse(width, height, &mut u_next, &u, &params_val.rv * factor);
+            diffuse(width, height, &mut v_next, &v, &params_val.ru * factor);
             react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, &params_val);
             react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, &params_val);
             clip(width, height, &mut u, uMax, 0.);
@@ -534,6 +538,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("factor", |params, value| params.factor = value);
         assign_state("f", |params, value| params.f = value);
         assign_state("k", |params, value| params.k = value);
+        assign_state("ru", |params, value| params.ru = value);
+        assign_state("rv", |params, value| params.rv = value);
 
         // Schedule ourself for another requestAnimationFrame callback.
         request_animation_frame(func.borrow().as_ref().unwrap());

@@ -15,6 +15,8 @@ async function run() {
   var factor = 1.0;
   var f = 0.03;
   var k = 0.056;
+  var ru = 0.07;
+  var rv = 0.056;
 
   const ctx = canvas.getContext('2d');
   const imageData = ctx.createImageData(canvasSize.width, canvasSize.height);
@@ -44,12 +46,26 @@ async function run() {
   const factorSlider = sliderInit("factor", "factorLabel", value => factor = value);
   const fSlider = sliderInit("f", "fLabel", value => f = value);
   const kSlider = sliderInit("k", "kLabel", value => k = value);
+  const ruSlider = sliderInit("ru", "ruLabel", value => ru = value);
+  const rvSlider = sliderInit("rv", "rvLabel", value => rv = value);
+
+  const buttonStripes = document.getElementById("buttonStripes");
+  buttonStripes.addEventListener("click", (event) => {
+    factorSlider.value = 1.;
+    fSlider.value = 0.03;
+    kSlider.value = 0.056;
+    ruSlider.value = 0.09;
+    rvSlider.value = 0.056;
+    sliderUpdater.forEach(update => update());
+  })
 
   const buttonWaves = document.getElementById("buttonWaves");
   buttonWaves.addEventListener("click", (event) => {
     factorSlider.value = 1.;
-    fSlider.value = 0.03;
-    kSlider.value = 0.056;
+    fSlider.value = 0.023;
+    kSlider.value = 0.052;
+    ruSlider.value = 0.07;
+    rvSlider.value = 0.056;
     sliderUpdater.forEach(update => update());
   })
 
@@ -83,6 +99,8 @@ async function run() {
                     factor,
                     f,
                     k,
+                    ru,
+                    rv
                 };
             });
     }

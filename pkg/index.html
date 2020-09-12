@@ -32,8 +32,8 @@
       <div>Use your WASDQZ keys to move</div>
       <div>Use your arrow keys to rotate</div>
       <h2>Gray-scott model</h2>
-      <div>$$\frac{\partial u}{\partial t} = u^2 v - (F + k)u + \Delta u$$</div>
-      <div>$$\frac{\partial v}{\partial t} = -u^2 v + F (1 - v) + \Delta v$$</div>
+      <div>$$\frac{\partial u}{\partial t} = u^2 v - (F + k)u + r_u \Delta u$$</div>
+      <div>$$\frac{\partial v}{\partial t} = -u^2 v + F (1 - v) + r_v \Delta v$$</div>
       <div>
         Time step=<span id="factorLabel"></span>
         <input id="factor" type="range" max="1" min="1e-3" step="1e-3" value="1">
@@ -46,7 +46,16 @@
         \(k=\)<span id="kLabel"></span>
         <input id="k" type="range" max="1" min="1e-3" step="1e-3" value="0.056">
       </div>
+      <div>
+        \(r_u=\)<span id="ruLabel"></span>
+        <input id="ru" type="range" max="1" min="1e-3" step="1e-3" value="0.09">
+      </div>
+      <div>
+        \(r_v=\)<span id="rvLabel"></span>
+        <input id="rv" type="range" max="1" min="1e-3" step="1e-3" value="0.056">
+      </div>
       <h2>Presets</h2>
+      <button id="buttonStripes">Stripes</button>
       <button id="buttonWaves">Waves</button>
       <hr>
       <div id="label"></div>
