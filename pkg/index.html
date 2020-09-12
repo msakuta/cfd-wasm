@@ -34,8 +34,20 @@
       <h2>Gray-scott model</h2>
       <div>$$\frac{\partial u}{\partial t} = u^2 v - (F + k)u + \Delta u$$</div>
       <div>$$\frac{\partial v}{\partial t} = -u^2 v + F (1 - v) + \Delta v$$</div>
-      Time step=<span id="factorLabel"></span>
-      <input id="factor" type="range" max="1" min="1e-3" step="1e-3">
+      <div>
+        Time step=<span id="factorLabel"></span>
+        <input id="factor" type="range" max="1" min="1e-3" step="1e-3" value="1">
+      </div>
+      <div>
+        \(F=\)<span id="fLabel"></span>
+        <input id="f" type="range" max="1" min="1e-3" step="1e-3" value="0.03">
+      </div>
+      <div>
+        \(k=\)<span id="kLabel"></span>
+        <input id="k" type="range" max="1" min="1e-3" step="1e-3" value="0.056">
+      </div>
+      <h2>Presets</h2>
+      <button id="buttonWaves">Waves</button>
       <hr>
       <div id="label"></div>
   </body>

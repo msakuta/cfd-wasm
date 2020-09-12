@@ -13,6 +13,8 @@ async function run() {
   var yaw = -90.;
   var pitch = -90.;
   var factor = 1.0;
+  var f = 0.03;
+  var k = 0.056;
 
   const ctx = canvas.getContext('2d');
   const imageData = ctx.createImageData(canvasSize.width, canvasSize.height);
@@ -25,12 +27,30 @@ async function run() {
   const yamlText = await yaml.text();
 
   const animateCheckbox = document.getElementById("animate");
-  const factorSlider = document.getElementById("factor");
-  const factorLabel = document.getElementById("factorLabel");
+  const sliderUpdater = [];
+  function sliderInit(sliderId, labelId, writer){
+    const slider = document.getElementById(sliderId);
+    const label = document.getElementById(labelId);
+    label.innerHTML = slider.value;
 
-  factorSlider.addEventListener("input", (event) => {
-      factorLabel.innerHTML = factorSlider.value;
-      factor = factorSlider.value;
+    const update = (_event) => {
+        label.innerHTML = slider.value;
+        writer(parseFloat(slider.value));
+    }
+    slider.addEventListener("input", update);
+    sliderUpdater.push(update);
+    return slider;
+  }
+  const factorSlider = sliderInit("factor", "factorLabel", value => factor = value);
+  const fSlider = sliderInit("f", "fLabel", value => f = value);
+  const kSlider = sliderInit("k", "kLabel", value => k = value);
+
+  const buttonWaves = document.getElementById("buttonWaves");
+  buttonWaves.addEventListener("click", (event) => {
+    factorSlider.value = 1.;
+    fSlider.value = 0.03;
+    kSlider.value = 0.056;
+    sliderUpdater.forEach(update => update());
   })
 
   function renderCanvas(){
@@ -60,7 +80,9 @@ async function run() {
                 const animateCheckbox = document.getElementById("animate");
                 return {
                     terminate: !animateCheckbox.checked,
-                    factor: parseFloat(factor)
+                    factor,
+                    f,
+                    k,
                 };
             });
     }

@@ -376,7 +376,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     };
 
-    let mut factor_rc = Rc::new(RefCell::new(1.));
+    #[derive(Copy, Clone)]
+    struct Params{
+        factor: f64,
+        f: f64,
+        k: f64,
+    }
+
+    let mut params = Rc::new(RefCell::new(Params{
+        factor: 1.,
+        f: 0.03,
+        k: 0.056,
+    }));
     const epsilon: f64 = 1.;
     const Au: f64 = 1.2;
     const Bu: f64 = 0.5;
@@ -386,8 +397,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     const Bv: f64 = 0.08;
     const Cv: f64 = 0. * 0.15;
     const Dv: f64 = 0.09 / epsilon / epsilon;
-    const F: f64 = 0.03;
-    const k: f64 = 0.056;
+    // const F: f64 = 0.03;
+    // const k: f64 = 0.056;
     const skip: usize = 1;
 
     fn diffuse(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, d: f64){
@@ -405,22 +416,22 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, factor: f64){
+    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, params: &Params){
         for y in 1..height-1 {
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                u_next[x + y * width] += factor * (u_p * u_p * v_p - (F + k) * u_p);
+                u_next[x + y * width] += params.factor * (u_p * u_p * v_p - (params.f + params.k) * u_p);
             }
         }
     }
 
-    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, factor: f64){
+    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, a: f64, b: f64, c: f64, params: &Params){
         for y in 1..height-1 {
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                v_next[x + y * width] += factor * (-u_p * u_p * v_p + F * (1. - v_p));
+                v_next[x + y * width] += params.factor * (-u_p * u_p * v_p + params.f * (1. - v_p));
             }
         }
     }
@@ -461,8 +472,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mouse_ref = *(*mouse_pos).borrow();
-        let factor = *(*factor_rc).borrow();
-        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}", i, mouse_ref.0, mouse_ref.0, factor);
+        let params_val = *(*params).borrow();
+        let Params{factor, f, k} = params_val;
+        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}, f: {}, k: {}",
+            i, mouse_ref.0, mouse_ref.0, factor, f, k);
 
         i += 1;
 
@@ -471,8 +484,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let mut v_next = v.clone();
             diffuse(width, height, &mut u_next, &u, Du * factor);
             diffuse(width, height, &mut v_next, &v, Dv * factor);
-            react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, factor);
-            react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, factor);
+            react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, &params_val);
+            react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, &params_val);
             clip(width, height, &mut u, uMax, 0.);
             clip(width, height, &mut v, vMax, 0.);
             u = u_next;
@@ -509,12 +522,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         if terminate_requested.is_truthy() {
             return
         }
-        if let Ok(new_factor) = js_sys::Reflect::get(&callback_ret, &JsValue::from("factor")) {
-            if let Some(the_factor) = new_factor.as_f64() {
-                console_log!("received factor value: {}", the_factor);
-                *(*factor_rc).borrow_mut() = the_factor;
+        let assign_state = |name: &str, setter: fn(params: &mut Params, val: f64)| {
+            if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
+                if let Some(the_val) = new_val.as_f64() {
+                    console_log!("received {} value: {}", name, the_val);
+                    let mut params_ref = (*params).borrow_mut();
+                    setter(&mut params_ref, the_val);
+                }
             }
-        }
+        };
+        assign_state("factor", |params, value| params.factor = value);
+        assign_state("f", |params, value| params.f = value);
+        assign_state("k", |params, value| params.k = value);
 
         // Schedule ourself for another requestAnimationFrame callback.
         request_animation_frame(func.borrow().as_ref().unwrap());
