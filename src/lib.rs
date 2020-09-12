@@ -378,7 +378,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     #[derive(Copy, Clone)]
     struct Params{
-        factor: f64,
+        deltaTime: f64,
         f: f64,
         k: f64,
         ru: f64,
@@ -386,7 +386,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     }
 
     let mut params = Rc::new(RefCell::new(Params{
-        factor: 1.,
+        deltaTime: 1.,
         f: 0.03,
         k: 0.056,
         ru: 0.07,
@@ -425,7 +425,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                u_next[x + y * width] += params.factor * (u_p * u_p * v_p - (params.f + params.k) * u_p);
+                u_next[x + y * width] += params.deltaTime * (u_p * u_p * v_p - (params.f + params.k) * u_p);
             }
         }
     }
@@ -435,7 +435,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             for x in 1..width-1 {
                 let u_p = u[x + y * width];
                 let v_p = v[x + y * width];
-                v_next[x + y * width] += params.factor * (-u_p * u_p * v_p + params.f * (1. - v_p));
+                v_next[x + y * width] += params.deltaTime * (-u_p * u_p * v_p + params.f * (1. - v_p));
             }
         }
     }
@@ -477,17 +477,17 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let mouse_ref = *(*mouse_pos).borrow();
         let params_val = *(*params).borrow();
-        let Params{factor, f, k, ..} = params_val;
-        console_log!("Rendering frame {}, mouse_pos: {}, {} factor: {}, f: {}, k: {}, ru: {}, rv: {}",
-            i, mouse_ref.0, mouse_ref.0, factor, f, k, params_val.ru, params_val.rv);
+        let Params{deltaTime, f, k, ..} = params_val;
+        console_log!("Rendering frame {}, mouse_pos: {}, {} deltaTime: {}, f: {}, k: {}, ru: {}, rv: {}",
+            i, mouse_ref.0, mouse_ref.0, deltaTime, f, k, params_val.ru, params_val.rv);
 
         i += 1;
 
         for _ in 0..skip {
             let mut u_next = u.clone();
             let mut v_next = v.clone();
-            diffuse(width, height, &mut u_next, &u, &params_val.rv * factor);
-            diffuse(width, height, &mut v_next, &v, &params_val.ru * factor);
+            diffuse(width, height, &mut u_next, &u, &params_val.rv * deltaTime);
+            diffuse(width, height, &mut v_next, &v, &params_val.ru * deltaTime);
             react_u(width, height, &mut u_next, &u, &v, Au, Bu, Cu, &params_val);
             react_v(width, height, &mut v_next, &u, &v, Au, Bu, Cu, &params_val);
             clip(width, height, &mut u, uMax, 0.);
@@ -535,7 +535,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 }
             }
         };
-        assign_state("factor", |params, value| params.factor = value);
+        assign_state("deltaTime", |params, value| params.deltaTime = value);
         assign_state("f", |params, value| params.f = value);
         assign_state("k", |params, value| params.k = value);
         assign_state("ru", |params, value| params.ru = value);

@@ -12,7 +12,7 @@ async function run() {
   var z = -300.;
   var yaw = -90.;
   var pitch = -90.;
-  var factor = 1.0;
+  var deltaTime = 1.0;
   var f = 0.03;
   var k = 0.056;
   var ru = 0.07;
@@ -43,7 +43,7 @@ async function run() {
     sliderUpdater.push(update);
     return slider;
   }
-  const factorSlider = sliderInit("factor", "factorLabel", value => factor = value);
+  const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
   const fSlider = sliderInit("f", "fLabel", value => f = value);
   const kSlider = sliderInit("k", "kLabel", value => k = value);
   const ruSlider = sliderInit("ru", "ruLabel", value => ru = value);
@@ -51,7 +51,7 @@ async function run() {
 
   const buttonStripes = document.getElementById("buttonStripes");
   buttonStripes.addEventListener("click", (event) => {
-    factorSlider.value = 1.;
+    deltaTimeSlider.value = 1.;
     fSlider.value = 0.03;
     kSlider.value = 0.056;
     ruSlider.value = 0.09;
@@ -61,7 +61,7 @@ async function run() {
 
   const buttonWaves = document.getElementById("buttonWaves");
   buttonWaves.addEventListener("click", (event) => {
-    factorSlider.value = 1.;
+    deltaTimeSlider.value = 1.;
     fSlider.value = 0.023;
     kSlider.value = 0.052;
     ruSlider.value = 0.07;
@@ -71,7 +71,7 @@ async function run() {
 
   const buttonWavyStripes = document.getElementById("buttonWavyStripes");
   buttonWavyStripes.addEventListener("click", (event) => {
-    factorSlider.value = 1.;
+    deltaTimeSlider.value = 1.;
     fSlider.value = 0.023;
     kSlider.value = 0.052;
     ruSlider.value = 0.03;
@@ -106,7 +106,7 @@ async function run() {
                 const animateCheckbox = document.getElementById("animate");
                 return {
                     terminate: !animateCheckbox.checked,
-                    factor,
+                    deltaTime,
                     f,
                     k,
                     ru,
