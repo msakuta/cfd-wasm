@@ -27,10 +27,9 @@
   <body>
       <canvas id="canvas" width="320" height="240"> </canvas>
       <div>
-        <label><input type="checkbox" id="animate">Animate</label>
+        <label><input type="checkbox" id="animate" checked>Animate</label>
       </div>
-      <div>Use your WASDQZ keys to move</div>
-      <div>Use your arrow keys to rotate</div>
+      <div>Move your mouse cursor on the canvas to see the effect</div>
       <h2>Gray-scott model</h2>
       <div>$$\frac{\partial u}{\partial t} = u^2 v - (F + k)u + r_u \Delta u$$</div>
       <div>$$\frac{\partial v}{\partial t} = -u^2 v + F (1 - v) + r_v \Delta v$$</div>
@@ -58,7 +57,7 @@
         \(r_v=\)<span id="rvLabel"></span>
         <input id="rv" type="range" max="1" min="1e-3" step="1e-3" value="0.056">
       </div>
-      <h2>Presets</h2>
+      <h2>Parameter Presets</h2>
       <button id="buttonStripes">Stripes</button>
       <button id="buttonWaves">Waves</button>
       <button id="buttonWavyStripes">Wavy Stripes</button>

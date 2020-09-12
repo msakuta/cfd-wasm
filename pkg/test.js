@@ -1,4 +1,4 @@
-import init, { turing } from './ray_rust_wasm.js'
+import init, { turing } from './rd_system_wasm.js'
 
 async function run() {
   await init()
@@ -133,6 +133,7 @@ async function run() {
         startAnimation();
   }
 
+  startAnimation();
 }
 
 run()
