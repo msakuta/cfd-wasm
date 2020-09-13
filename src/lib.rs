@@ -98,8 +98,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     let mut render = |height, width, data: &mut Vec<u8>, u: &mut Vec<f64>, v: &mut Vec<f64>| {
         for y in 0..height {
             for x in 0..width {
-                data[(x + y * width) * 4    ] = ((u[x + y * width] + uMax) / 2. / uMax * 127.) as u8;
-                data[(x + y * width) * 4 + 1] = ((v[x + y * width] + uMax) / 2. / vMax * 127.) as u8;
+                data[(x + y * width) * 4    ] = ((u[x + y * width]) / uMax * 127.) as u8;
+                data[(x + y * width) * 4 + 1] = ((v[x + y * width]) / vMax * 127.) as u8;
                 data[(x + y * width) * 4 + 2] = 0;
                 data[(x + y * width) * 4 + 3] = 255;
             }
