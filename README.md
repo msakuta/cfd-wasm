@@ -8,6 +8,10 @@ Try it now with your browser!
 
 https://msakuta.github.io/rd-system-wasm/
 
+## Screencasts
+
+![screencast](https://msakuta.github.io/images/showcase/rd-system-wasm.gif)
+
 ## How to build and run
 
 Install
@@ -41,10 +45,6 @@ You can control the parameters with sliders on the bottom half of the screen.
 
 Reaction-diffusion system is very sensitive to parameters. Interesting patterns show up only in very certain combination of parameters.
 So there are buttons to set the parameters to one of these interesting sets.
-
-## Screencasts
-
-![screencast](https://msakuta.github.io/images/showcase/rd-system-wasm.gif)
 
 ## The tutorial that I used
 
