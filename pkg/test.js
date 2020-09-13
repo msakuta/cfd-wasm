@@ -6,17 +6,13 @@ async function run() {
   const canvas = document.getElementById('canvas');
   const canvasSize = canvas.getBoundingClientRect();
 
-  var x = 0;
-  var y = -150.;
-  var z = -300.;
-  var yaw = -90.;
-  var pitch = -90.;
   var deltaTime = 1.0;
   var skipFrames = 1;
   var f = 0.03;
   var k = 0.056;
   var ru = 0.07;
   var rv = 0.056;
+  var mousePos;
 
   const ctx = canvas.getContext('2d');
 
@@ -92,6 +88,10 @@ async function run() {
     sliderUpdater.forEach(update => update());
   })
 
+  canvas.addEventListener("mousemove", (event) => {
+      mousePos = [event.offsetX, event.offsetY];
+  })
+
   var label = document.getElementById('label');
 
   function startAnimation(){
@@ -105,6 +105,7 @@ async function run() {
                 const animateCheckbox = document.getElementById("animate");
                 return {
                     terminate: !animateCheckbox.checked,
+                    mousePos,
                     deltaTime,
                     skipFrames,
                     f,
