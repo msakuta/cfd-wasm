@@ -31,9 +31,16 @@ Browse http://localhost:5000/
 
 ## Controls
 
-You can use WASDQZ keys to move around the world and arrow keys to rotate the camera.
+You can move your mouse cursor on the simulation to disturb the field. It may create a new pattern, depending on the parameters.
 
-Also, you can click on the Animate checkbox to enable animation with predefined path.
+You can control the parameters with sliders on the bottom half of the screen.
+
+"Time step" and "Skip frames" both contributes to the speed of the simulation.
+
+## Parameter presets
+
+Reaction-diffusion system is very sensitive to parameters. Interesting patterns show up only in very certain combination of parameters.
+So there are buttons to set the parameters to one of these interesting sets.
 
 ## Screenshots
 
