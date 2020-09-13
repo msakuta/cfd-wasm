@@ -1,4 +1,3 @@
-extern crate image;
 extern crate console_error_panic_hook;
 extern crate libm;
 use std::panic;
@@ -33,14 +32,14 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
         .expect("should register `requestAnimationFrame` OK");
 }
 
-fn document() -> web_sys::Document {
+fn _document() -> web_sys::Document {
     window()
         .document()
         .expect("should have a document on window")
 }
 
-fn body() -> web_sys::HtmlElement {
-    document().body().expect("document should have a body")
+fn _body() -> web_sys::HtmlElement {
+    _document().body().expect("document should have a body")
 }
 
 struct Xor128{
@@ -95,7 +94,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    let mut render = |height, width, data: &mut Vec<u8>, u: &mut Vec<f64>, v: &mut Vec<f64>| {
+    let render = |height, width, data: &mut Vec<u8>, u: &mut Vec<f64>, v: &mut Vec<f64>| {
         for y in 0..height {
             for x in 0..width {
                 data[(x + y * width) * 4    ] = ((u[x + y * width]) / uMax * 127.) as u8;
@@ -117,7 +116,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         rv: f64,
     }
 
-    let mut params = Rc::new(RefCell::new(Params{
+    let params = Rc::new(RefCell::new(Params{
         delta_time: 1.,
         skip_frames: 1,
         mouse_pos: [0, 0],
@@ -162,7 +161,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn clip(width: usize, height: usize, u: &mut Vec<f64>, max: f64, min: f64){
+    fn _clip(width: usize, height: usize, u: &mut Vec<f64>, max: f64, min: f64){
         for y in 0..height {
             for x in 0..width {
                 u[x + y * width] = libm::fmax(libm::fmin(u[x + y * width], max), min);
