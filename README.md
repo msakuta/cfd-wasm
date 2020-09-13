@@ -42,10 +42,15 @@ You can control the parameters with sliders on the bottom half of the screen.
 Reaction-diffusion system is very sensitive to parameters. Interesting patterns show up only in very certain combination of parameters.
 So there are buttons to set the parameters to one of these interesting sets.
 
-## Screenshots
+## Screencasts
 
-![screenshot](images/screenshot00.jpg)
+![screencast](https://msakuta.github.io/images/showcase/rd-system-wasm.gif)
 
 ## The tutorial that I used
 
 https://aralroca.com/blog/first-steps-webassembly-rust
+
+
+## Reference
+
+http://elephnote.com/blog/archives/191
