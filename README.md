@@ -1,4 +1,4 @@
-![Rust-wasm](https://github.com/msakuta/ray-rust-wasm/workflows/Rust-wasm/badge.svg)
+![Rust-wasm](https://github.com/msakuta/rd-system-wasm/workflows/Rust-wasm/badge.svg)
 
 # rd-system-wasm
 
