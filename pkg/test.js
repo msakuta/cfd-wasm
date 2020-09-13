@@ -3,8 +3,11 @@ import init, { turing } from './rd_system_wasm.js'
 async function run() {
   await init()
 
+  const canvasScale = 2.;
   const canvas = document.getElementById('canvas');
   const canvasSize = canvas.getBoundingClientRect();
+  canvas.style.width = canvasSize.width * canvasScale + "px";
+  canvas.style.height = canvasSize.height * canvasScale + "px";
 
   var deltaTime = 1.0;
   var skipFrames = 1;
@@ -89,7 +92,7 @@ async function run() {
   })
 
   canvas.addEventListener("mousemove", (event) => {
-      mousePos = [event.offsetX, event.offsetY];
+      mousePos = [event.offsetX / canvasScale, event.offsetY / canvasScale];
   })
 
   var label = document.getElementById('label');
