@@ -85,8 +85,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     let mut xor128 = Xor128::new(123);
 
+    let mut particles = (0..1000).map(|_| {
+        ((xor128.nexti() as usize % width) as f64, (xor128.nexti() as usize % height) as f64)
+    }).collect::<Vec<_>>();
+
     const uMax: f64 = 1.0;
-    const vMax: f64 = 1.0;
+    const vMax: f64 = 0.01;
 
     for y in 0..height {
         for x in 0..width {
@@ -100,7 +104,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64]| {
+    let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64], particles: &[(f64, f64)]| {
         for y in 0..height {
             for x in 0..width {
                 data[(x + y * width) * 4    ] = ((u[x + y * width] % uMax) / uMax * 127.) as u8;
@@ -108,6 +112,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 data[(x + y * width) * 4 + 2] = 0;
                 data[(x + y * width) * 4 + 3] = 255;
             }
+        }
+
+        for particle in particles {
+            let (x, y) = (particle.0 as usize, particle.1 as usize);
+            data[(x + y * width) * 4    ] = 255;
+            data[(x + y * width) * 4 + 1] = 255;
+            data[(x + y * width) * 4 + 2] = 255;
+            data[(x + y * width) * 4 + 3] = 255;
         }
     };
 
@@ -347,7 +359,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    render(height, width, &mut data, &mut u, &mut v);
+    render(height, width, &mut data, &mut u, &mut v, &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -364,6 +376,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         i += 1;
 
         let (iwidth, iheight) = (width as isize, height as isize);
+        let (fwidth, fheight) = (width as f64, height as f64);
         let ix = |x, y| {
             ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
         };
@@ -383,6 +396,15 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step(&mut Vx, &mut Vy);
+
+            for particle in &mut particles {
+                let pvx = Vx[ix(particle.0 as i32, particle.1 as i32)];
+                let pvy = Vy[ix(particle.0 as i32, particle.1 as i32)];
+                let dtx = params.delta_time * (width - 2) as f64;
+                let dty = params.delta_time * (height - 2) as f64;
+                particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
+                particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
+            }
             // let mut u_next = u.clone();
             // let mut v_next = v.clone();
             // diffuse(width, height, &mut u_next, &u, &params_val.rv * delta_time);
@@ -414,7 +436,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             accum / (width * height) as f64
         };
 
-        render(height, width, &mut data, &state.density, &velo);
+        render(height, width, &mut data, &state.density, &velo, &particles);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
