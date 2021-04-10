@@ -1,12 +1,12 @@
-![Rust-wasm](https://github.com/msakuta/rd-system-wasm/workflows/Rust-wasm/badge.svg)
+[![Rust-wasm](https://github.com/msakuta/cfd-wasm/actions/workflows/rust-wasm.yml/badge.svg)](https://github.com/msakuta/cfd-wasm/actions/workflows/rust-wasm.yml)
 
-# rd-system-wasm
+# cfd-wasm
 
-Reaction-Diffusion system simulation with Webassembly and Rust.
+Computational Fluid Dynamics simulation with Webassembly and Rust.
 
 Try it now with your browser!
 
-https://msakuta.github.io/rd-system-wasm/
+https://msakuta.github.io/cfd-wasm/
 
 ## Screencasts
 
@@ -53,4 +53,6 @@ https://aralroca.com/blog/first-steps-webassembly-rust
 
 ## Reference
 
-http://elephnote.com/blog/archives/191
+https://mikeash.com/pyblog/fluid-simulation-for-dummies.html
+
+https://www.dgp.toronto.edu/public_user/stam/reality/Research/pdf/GDC03.pdf

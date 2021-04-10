@@ -1,4 +1,4 @@
-import init, { turing } from './rd_system_wasm.js'
+import init, { turing } from './cfd_wasm.js'
 
 async function run() {
   await init()
