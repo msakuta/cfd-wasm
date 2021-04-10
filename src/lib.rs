@@ -105,7 +105,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64]| {
         for y in 0..height {
             for x in 0..width {
-                data[(x + y * width) * 4    ] = ((u[x + y * width]) / uMax * 127.) as u8;
+                data[(x + y * width) * 4    ] = ((u[x + y * width] % uMax) / uMax * 127.) as u8;
                 data[(x + y * width) * 4 + 1] = ((v[x + y * width]) / vMax * 127.) as u8;
                 data[(x + y * width) * 4 + 2] = 0;
                 data[(x + y * width) * 4 + 3] = 255;
@@ -293,16 +293,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
 
         fn fluid_step(&mut self, Vx: &mut [f64], Vy: &mut [f64]) {
-            let visc     = 1.0;
-            let diff     = 0.5;
+            let visc     = 0.5;
+            let diff     = 0.125;
             let dt       = self.params.delta_time;
             let mut Vx0     = Vx.to_vec();
             let mut Vy0     = Vy.to_vec();
             let s       = &mut self.s;
             let density = &mut self.density;
             
-            diffuse(1, &mut Vx0, Vx, visc, dt, 4, self.width, self.height);
-            diffuse(2, &mut Vy0, Vy, visc, dt, 4, self.width, self.height);
+            diffuse(1, &mut Vx0, Vx, visc, dt, 1, self.width, self.height);
+            diffuse(2, &mut Vy0, Vy, visc, dt, 1, self.width, self.height);
             
             // project(Vx0, Vy0, Vz0, Vx, Vy, 4, N);
             
@@ -311,7 +311,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             
             // project(Vx, Vy, Vz, Vx0, Vy0, 4, N);
             
-            diffuse(0, s, density, diff, dt, 4, self.width, self.height);
+            diffuse(0, s, density, diff, dt, 1, self.width, self.height);
             advect(0, density, s, Vx, Vy, dt, self.width, self.height);
         }
     }
@@ -363,8 +363,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
         let Params{delta_time, f, k, mouse_pos, ..} = state.params;
-        console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
-            i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
+        // console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
+        //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
 
         i += 1;
 
@@ -373,7 +373,13 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
         };
 
-        add_density(&mut state.density, state.width / 2, state.height / 2, 1., state.width, state.height);
+        let velo = Vx.iter().zip(Vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>();
+
+        console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
+            i, state.density.iter().fold(0., |acc, v| acc + v),
+            state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
+
+        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize, 1000000., state.width, state.height);
         add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]), [1., 1.]);
 
         for _ in 0..state.params.skip_frames {
@@ -390,14 +396,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             // v = v_next;
         }
 
-        let [xx, yy] = mouse_pos;
-        for x in xx-1..xx+2 {
-            for y in yy-1..yy+2 {
-                if 0 <= x && x < width as i32 && 0 <= y && y < height as i32 {
-                    u[x as usize + y as usize * width] = uMax;
-                }
-            }
-        }
+        // let [xx, yy] = mouse_pos;
+        // for x in xx-1..xx+2 {
+        //     for y in yy-1..yy+2 {
+        //         if 0 <= x && x < width as i32 && 0 <= y && y < height as i32 {
+        //             u[x as usize + y as usize * width] = uMax;
+        //         }
+        //     }
+        // }
 
         let average = {
             let mut accum = 0.;
@@ -409,7 +415,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             accum / (width * height) as f64
         };
 
-        render(height, width, &mut data, &mut state.density, &mut v);
+        render(height, width, &mut data, &state.density, &velo);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
@@ -440,9 +446,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             for i in 0..2 {
                 if let Ok(the_val) = js_sys::Reflect::get_u32(&new_val, i) {
                     if let Some(value) = the_val.as_f64() {
-                        console_log!("received mouse_pos[{}] value: {}", i, value);
-                        let mut params_ref = state.params;
-                        params_ref.mouse_pos[i as usize] = value as i32;
+                        // console_log!("received mouse_pos[{}] value: {}", i, value);
+                        state.params.mouse_pos[i as usize] = value as i32;
                     }
                 }
             }
