@@ -81,8 +81,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     let mut Vx = vec![0f64; 4 * width * height];
     let mut Vy = vec![0f64; 4 * width * height];
 
-    let mut Vx0 = vec![0f64; 4 * width * height];
-    let mut Vy0 = vec![0f64; 4 * width * height];
     let mut data = vec![0u8; 4 * width * height];
 
     let mut xor128 = Xor128::new(123);
@@ -151,11 +149,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     //     }
     // }
 
-    fn add_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
+    fn set_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
         let ix = |x, y| {
             ((x + width) % width + (y + height) % height * width) as usize
         };
-        density[ix(x, y)] += amount;
+        density[ix(x, y)] = amount;
     }
 
     fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
@@ -211,8 +209,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         };
         let c_recip = 1.0 / c;
         for _ in 0..iter {
-            for j in 1..iheight - 1 {
-                for i in 1..iwidth - 1 {
+            for j in 0..iheight {
+                for i in 0..iwidth {
                     x[ix(i, j)] = (x0[ix(i, j)]
                             + a*(    x0[ix(i+1, j  )]
                                     +x0[ix(i-1, j  )]
@@ -233,7 +231,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, width: usize, height: usize) {
         let (iwidth, iheight) = (width as isize, height as isize);
         let ix = |x, y| {
-            ((x + width) % width + (y + height) % height * width) as usize
+            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
         };
     
         let dtx = dt * (width - 2) as f64;
@@ -242,19 +240,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let fwidth = width as f64;
         let fheight = height as f64;
 
-        for j in 1..height - 1 { 
+        for j in 0..iheight {
             let jfloat = j as f64;
-            for i in 1..width - 1 {
+            for i in 0..iwidth {
                 let ifloat = i as f64;
-                let mut x    = ifloat - dtx * velocX[ix(i, j)];
-                let mut y    = jfloat - dty * velocY[ix(i, j)];
+                let x    = ifloat - dtx * velocX[ix(i, j)];
+                let y    = jfloat - dty * velocY[ix(i, j)];
                 
-                if x < 0.5 { x = 0.5 }
-                if x > fwidth + 0.5 { x = fwidth + 0.5 };
+                // if x < 0.5 { x = 0.5 }
+                // if x > fwidth + 0.5 { x = fwidth + 0.5 };
                 let i0 = x.floor();
                 let i1 = i0 + 1.0;
-                if y < 0.5 { y = 0.5 }
-                if y > fheight + 0.5 { y = fheight + 0.5 };
+                // if y < 0.5 { y = 0.5 }
+                // if y > fheight + 0.5 { y = fheight + 0.5 };
                 let j0 = y.floor();
                 let j1 = j0 + 1.0; 
                 
@@ -263,10 +261,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 let t1 = y - j0; 
                 let t0 = 1.0 - t1;
                 
-                let i0i = i0 as usize;
-                let i1i = i1 as usize;
-                let j0i = j0 as usize;
-                let j1i = j1 as usize;
+                let i0i = i0 as isize;
+                let i1i = i1 as isize;
+                let j0i = j0 as isize;
+                let j1i = j1 as isize;
                 
                 d[ix(i, j)] = 
                     s0 * ( t0 * (d0[ix(i0i, j0i)])
@@ -290,8 +288,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
 
         fn fluid_step(&mut self, vx: &mut [f64], vy: &mut [f64]) {
-            let visc     = 0.5;
-            let diff     = 0.125;
+            let visc     = 0.05;
+            let diff     = 0.025;
             let dt       = self.params.delta_time;
             let mut vx0     = vx.to_vec();
             let mut vy0     = vy.to_vec();
@@ -376,9 +374,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             i, state.density.iter().fold(0., |acc, v| acc + v),
             state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
 
-        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize, 100. * state.params.ru, state.width, state.height);
-        let angle_rad = state.params.rv * 2. * std::f64::consts::PI;
-        add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]), [angle_rad.cos(), angle_rad.sin()]);
+        let density_phase = (i as f64 * 0.01 * std::f64::consts::PI).cos() + 1.;
+        set_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
+            density_phase * state.params.ru, state.width, state.height);
+        let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
+        add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]),
+            [state.params.rv * angle_rad.cos(), state.params.rv * angle_rad.sin()]);
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step(&mut Vx, &mut Vy);
