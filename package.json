@@ -1,0 +1,15 @@
+{
+  "name": "cfd-wasm",
+  "collaborators": [
+    "Masahiro <masahiro.sakuta@zmp.co.jp>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "cfd_wasm_bg.wasm",
+    "cfd_wasm.js",
+    "cfd_wasm.d.ts"
+  ],
+  "module": "cfd_wasm.js",
+  "types": "cfd_wasm.d.ts",
+  "sideEffects": false
+}
