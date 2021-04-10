@@ -74,8 +74,6 @@ impl Xor128{
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
-    let mut u = vec![0f64; 4 * width * height];
-    let mut v = vec![0f64; 4 * width * height];
     let mut s = vec![0f64; 4 * width * height];
     let mut density = vec![0f64; 4 * width * height];
 
@@ -95,18 +93,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     const uMax: f64 = 1.0;
     const vMax: f64 = 0.01;
-
-    for y in 0..height {
-        for x in 0..width {
-            u[x + y * width] = (xor128.nexti() as f64 / 0xffffffffu32 as f64 - 0.5) * uMax;
-            if (x - width / 2) * (x - width / 2) + (y - height / 2) * (y - height / 2) < 100 {
-                u[x + y * width] = uMax;
-            }
-            // v[x + y * width] = (xor128.nexti() as f64 / 0xffffffffu32 as f64 - 0.5) * vMax;
-                // + libm::sin(x as f64 * 0.05 * libm::acos(0.)) * uMax;
-            // v[x + y * width] = libm::sin((x as f64 * 0.05 + 0.5) * libm::acos(0.)) * 0.5 * uMax;
-        }
-    }
 
     let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64], particles: &[(f64, f64)]| {
         for y in 0..height {
@@ -138,8 +124,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         rv: f64,
     }
 
-    let params = //Rc::new(RefCell::new(
-        Params{
+    let params = Params{
         delta_time: 1.,
         skip_frames: 1,
         mouse_pos: [0, 0],
@@ -148,22 +133,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         ru: 0.07,
         rv: 0.056,
     };
-
-
-    // fn diffuse(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, d: f64){
-    //     let [iwidth, iheight] = [width as isize, height as isize];
-    //     for y in 0..iheight {
-    //         for x in 0..iwidth {
-    //             u_next[x as usize + y as usize * width] += {
-    //                 let fu = |x, y| {
-    //                     u[((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize]
-    //                 };
-    //                 d * (fu(x + 1, y) + fu(x - 1, y)
-    //                     + fu(x, y - 1) + fu(x, y + 1) - 4. * fu(x, y))
-    //             };
-    //         }
-    //     }
-    // }
 
     fn set_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
         let ix = |x, y| {
@@ -253,9 +222,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let dtx = dt * (width - 2) as f64;
         let dty = dt * (height - 2) as f64;
 
-        let fwidth = width as f64;
-        let fheight = height as f64;
-
         for j in 0..iheight {
             let jfloat = j as f64;
             for i in 0..iwidth {
@@ -335,35 +301,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         params,
     };
 
-    fn react_u(width: usize, height: usize, u_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, params: &Params){
-        for y in 0..height {
-            for x in 0..width {
-                let u_p = u[x + y * width];
-                let v_p = v[x + y * width];
-                u_next[x + y * width] += params.delta_time * (u_p * u_p * v_p - (params.f + params.k) * u_p);
-            }
-        }
+    fn calc_velo(vx: &[f64], vy: &[f64]) -> Vec<f64> {
+        vx.iter().zip(vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>()
     }
 
-    fn react_v(width: usize, height: usize, v_next: &mut Vec<f64>, u: &Vec<f64>, v: &Vec<f64>, params: &Params){
-        for y in 0..height {
-            for x in 0..width {
-                let u_p = u[x + y * width];
-                let v_p = v[x + y * width];
-                v_next[x + y * width] += params.delta_time * (-u_p * u_p * v_p + params.f * (1. - v_p));
-            }
-        }
-    }
-
-    fn _clip(width: usize, height: usize, u: &mut Vec<f64>, max: f64, min: f64){
-        for y in 0..height {
-            for x in 0..width {
-                u[x + y * width] = libm::fmax(libm::fmin(u[x + y * width], max), min);
-            }
-        }
-    }
-
-    render(height, width, &mut data, &mut u, &mut v, &particles);
+    render(height, width, &mut data, &state.density, &calc_velo(&Vx, &Vy), &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -385,10 +327,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
         };
 
-        let velo = Vx.iter().zip(Vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>();
+        let velo = calc_velo(&Vx, &Vy);
+
+        let average = state.density.iter().fold(0., |acc, v| acc + v);
 
         console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
-            i, state.density.iter().fold(0., |acc, v| acc + v),
+            i, average,
             state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
 
         let density_phase = (i as f64 * 0.01 * std::f64::consts::PI).cos() + 1.;
@@ -409,36 +353,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
                 particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
             }
-            // let mut u_next = u.clone();
-            // let mut v_next = v.clone();
-            // diffuse(width, height, &mut u_next, &u, &params_val.rv * delta_time);
-            // diffuse(width, height, &mut v_next, &v, &params_val.ru * delta_time);
-            // react_u(width, height, &mut u_next, &u, &v, &params_val);
-            // react_v(width, height, &mut v_next, &u, &v, &params_val);
-            // clip(width, height, &mut u, uMax, 0.);
-            // clip(width, height, &mut v, vMax, 0.);
-            // u = u_next;
-            // v = v_next;
         }
-
-        // let [xx, yy] = mouse_pos;
-        // for x in xx-1..xx+2 {
-        //     for y in yy-1..yy+2 {
-        //         if 0 <= x && x < width as i32 && 0 <= y && y < height as i32 {
-        //             u[x as usize + y as usize * width] = uMax;
-        //         }
-        //     }
-        // }
-
-        let average = {
-            let mut accum = 0.;
-            for y in 1..height-1 {
-                for x in 1..width-1 {
-                    accum += u[x + y * width];
-                }
-            }
-            accum / (width * height) as f64
-        };
 
         render(height, width, &mut data, &state.density, &velo, &particles);
 
