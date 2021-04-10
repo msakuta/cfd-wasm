@@ -25,9 +25,10 @@
   </head>
 
   <body>
-      <canvas id="canvas" width="200" height="200"> </canvas>
+      <canvas id="canvas" width="200" height="200" > </canvas>
       <div>
         <label><input type="checkbox" id="animate" checked>Animate</label>
+        <button id="buttonResetParticles">Reset particles</button>
       </div>
       <div>Move your mouse cursor on the canvas to see the effect</div>
       <h2>Navier-stokes equation</h2>
@@ -57,12 +58,6 @@
         velocity=<span id="rvLabel"></span>
         <input id="rv" type="range" max="1" min="1e-3" step="1e-3" value="0.5">
       </div>
-      <h2>Parameter Presets</h2>
-      <button id="buttonStripes">Stripes</button>
-      <button id="buttonWaves">Waves</button>
-      <button id="buttonWavyStripes">Wavy Stripes</button>
-      <button id="buttonElastic">Elastic</button>
-      <button id="buttonCells">Cells</button>
       <hr>
       <div id="label"></div>
   </body>

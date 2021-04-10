@@ -1,4 +1,4 @@
-import init, { turing } from './rd_system_wasm.js'
+import init, { turing } from './cfd_wasm.js'
 
 async function run() {
   await init()
@@ -40,55 +40,11 @@ async function run() {
   const kSlider = sliderInit("k", "kLabel", value => k = value);
   const ruSlider = sliderInit("ru", "ruLabel", value => ru = value);
   const rvSlider = sliderInit("rv", "rvLabel", value => rv = value);
+  let resetParticles = false;
 
-  const buttonStripes = document.getElementById("buttonStripes");
-  buttonStripes.addEventListener("click", (event) => {
-    deltaTimeSlider.value = 1.;
-    fSlider.value = 0.03;
-    kSlider.value = 0.056;
-    ruSlider.value = 0.09;
-    rvSlider.value = 0.056;
-    sliderUpdater.forEach(update => update());
-  })
-
-  const buttonWaves = document.getElementById("buttonWaves");
-  buttonWaves.addEventListener("click", (event) => {
-    deltaTimeSlider.value = 1.;
-    fSlider.value = 0.023;
-    kSlider.value = 0.052;
-    ruSlider.value = 0.07;
-    rvSlider.value = 0.056;
-    sliderUpdater.forEach(update => update());
-  })
-
-  const buttonWavyStripes = document.getElementById("buttonWavyStripes");
-  buttonWavyStripes.addEventListener("click", (event) => {
-    deltaTimeSlider.value = 1.;
-    fSlider.value = 0.023;
-    kSlider.value = 0.052;
-    ruSlider.value = 0.03;
-    rvSlider.value = 0.028;
-    sliderUpdater.forEach(update => update());
-  })
-
-  const buttonElastic = document.getElementById("buttonElastic");
-  buttonElastic.addEventListener("click", (event) => {
-    deltaTimeSlider.value = 1.;
-    fSlider.value = 0.023;
-    kSlider.value = 0.052;
-    ruSlider.value = 0.076;
-    rvSlider.value = 0.074;
-    sliderUpdater.forEach(update => update());
-  })
-
-  const buttonCells = document.getElementById("buttonCells");
-  buttonCells.addEventListener("click", (event) => {
-    deltaTimeSlider.value = 1.;
-    fSlider.value = 0.023;
-    kSlider.value = 0.054;
-    ruSlider.value = 0.09;
-    rvSlider.value = 0.072;
-    sliderUpdater.forEach(update => update());
+  const buttonResetParticles = document.getElementById("buttonResetParticles");
+  buttonResetParticles.addEventListener("click", (event) => {
+    resetParticles = true;
   })
 
   canvas.addEventListener("mousemove", (event) => {
@@ -106,7 +62,7 @@ async function run() {
                 ctx.putImageData(data, 0, 0);
                 label.innerHTML = average;
                 const animateCheckbox = document.getElementById("animate");
-                return {
+                const ret = {
                     terminate: !animateCheckbox.checked,
                     mousePos,
                     deltaTime,
@@ -114,8 +70,11 @@ async function run() {
                     f,
                     k,
                     ru,
-                    rv
+                    rv,
+                    resetParticles,
                 };
+                resetParticles = false;
+                return ret;
             });
     }
     catch(e){
