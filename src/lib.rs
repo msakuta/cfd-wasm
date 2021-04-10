@@ -377,7 +377,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
 
         add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize, 100. * state.params.ru, state.width, state.height);
-        add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]), [1., 1.]);
+        let angle_rad = state.params.rv * 2. * std::f64::consts::PI;
+        add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]), [angle_rad.cos(), angle_rad.sin()]);
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step(&mut Vx, &mut Vy);
