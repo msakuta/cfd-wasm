@@ -42,6 +42,7 @@ fn _body() -> web_sys::HtmlElement {
     _document().body().expect("document should have a body")
 }
 
+#[derive(Clone, Copy)]
 struct Xor128{
     x: u32
 }
@@ -85,9 +86,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     let mut xor128 = Xor128::new(123);
 
-    let mut particles = (0..1000).map(|_| {
-        ((xor128.nexti() as usize % width) as f64, (xor128.nexti() as usize % height) as f64)
-    }).collect::<Vec<_>>();
+    let mut reset_particles = move || {
+        (0..1000).map(|_| {
+            ((xor128.nexti() as usize % width) as f64, (xor128.nexti() as usize % height) as f64)
+        }).collect::<Vec<_>>()
+    };
+    let mut particles = reset_particles();
 
     const uMax: f64 = 1.0;
     const vMax: f64 = 0.01;
@@ -471,6 +475,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                         state.params.mouse_pos[i as usize] = value as i32;
                     }
                 }
+            }
+        }
+        if let Ok(val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("resetParticles")) {
+            if let Some(true) = val.as_bool() {
+                particles = reset_particles();
             }
         }
 
