@@ -30,9 +30,9 @@
         <label><input type="checkbox" id="animate" checked>Animate</label>
       </div>
       <div>Move your mouse cursor on the canvas to see the effect</div>
-      <h2>Gray-scott model</h2>
-      <div>$$\frac{\partial u}{\partial t} = u^2 v - (F + k)u + r_u \Delta u$$</div>
-      <div>$$\frac{\partial v}{\partial t} = -u^2 v + F (1 - v) + r_v \Delta v$$</div>
+      <h2>Navier-stokes equation</h2>
+      <div>$$\frac{\partial \mathbf{u}}{\partial t} = -(\mathbf{u} \cdot \nabla) \mathbf{u} - \nu \nabla^2 \mathbf{u} + \mathbf{f}  $$</div>
+      <div>$$\frac{\partial \rho}{\partial t} = -(u \cdot \nabla) \rho + \kappa \nabla^2 \rho + S$$</div>
       <div>
         Time step=<span id="deltaTimeLabel"></span>
         <input id="deltaTime" type="range" max="1" min="1e-3" step="1e-3" value="1">
@@ -50,11 +50,11 @@
         <input id="k" type="range" max="1" min="1e-3" step="1e-3" value="0.056">
       </div>
       <div>
-        \(a_u=\)<span id="ruLabel"></span>
+        dye density=<span id="ruLabel"></span>
         <input id="ru" type="range" max="1" min="1e-3" step="1e-3" value="0.09">
       </div>
       <div>
-        \(\theta_v=\)<span id="rvLabel"></span>
+        velocity=<span id="rvLabel"></span>
         <input id="rv" type="range" max="1" min="1e-3" step="1e-3" value="0.5">
       </div>
       <h2>Parameter Presets</h2>
