@@ -8,9 +8,9 @@ Try it now with your browser!
 
 https://msakuta.github.io/cfd-wasm/
 
-## Screencasts
+## Screenshots
 
-![screencast](https://msakuta.github.io/images/showcase/rd-system-wasm.gif)
+![screenshot](images/screenshot00.jpg)
 
 ## How to build and run
 
