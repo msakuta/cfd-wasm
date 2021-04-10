@@ -207,21 +207,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, width: usize, height: usize) {
         let (iwidth, iheight) = (width as isize, height as isize);
         let ix = |x, y| {
-            ((x + width) % width + (y + height) % height * width) as usize
+            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
         };
-        let cRecip = 1.0 / c;
-        for k in 0..iter {
-            for j in 1..height - 1 {
-                for i in 1..width - 1 {
-                    x[ix(i, j)] =
-                        (x0[ix(i, j)]
-                            + a*(    x[ix(i+1, j  )]
-                                    +x[ix(i-1, j  )]
-                                    +x[ix(i  , j+1)]
-                                    +x[ix(i  , j-1)]
-                                    +x[ix(i  , j  )]
-                                    +x[ix(i  , j  )]
-                            )) * cRecip;
+        let c_recip = 1.0 / c;
+        for _ in 0..iter {
+            for j in 1..iheight - 1 {
+                for i in 1..iwidth - 1 {
+                    x[ix(i, j)] = (x0[ix(i, j)]
+                            + a*(    x0[ix(i+1, j  )]
+                                    +x0[ix(i-1, j  )]
+                                    +x0[ix(i  , j+1)]
+                                    +x0[ix(i  , j-1)]
+                            )) * c_recip;
                 }
             }
             // set_bnd(b, x, N);
@@ -230,7 +227,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, width: usize, height: usize) {
         let a = dt * diff * (width - 2) as f64 * (height - 2) as f64;
-        lin_solve(b, x, x0, a, 1. + 6. * a, iter, width, height);
+        lin_solve(b, x, x0, a, 1. + 4. * a, iter, width, height);
     }
 
     fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, width: usize, height: usize) {
@@ -292,27 +289,27 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     impl State {
 
 
-        fn fluid_step(&mut self, Vx: &mut [f64], Vy: &mut [f64]) {
+        fn fluid_step(&mut self, vx: &mut [f64], vy: &mut [f64]) {
             let visc     = 0.5;
             let diff     = 0.125;
             let dt       = self.params.delta_time;
-            let mut Vx0     = Vx.to_vec();
-            let mut Vy0     = Vy.to_vec();
+            let mut vx0     = vx.to_vec();
+            let mut vy0     = vy.to_vec();
             let s       = &mut self.s;
             let density = &mut self.density;
             
-            diffuse(1, &mut Vx0, Vx, visc, dt, 1, self.width, self.height);
-            diffuse(2, &mut Vy0, Vy, visc, dt, 1, self.width, self.height);
+            diffuse(1, &mut vx0, vx, visc, dt, 1, self.width, self.height);
+            diffuse(2, &mut vy0, vy, visc, dt, 1, self.width, self.height);
             
-            // project(Vx0, Vy0, Vz0, Vx, Vy, 4, N);
+            // project(vx0, Vy0, Vz0, Vx, Vy, 4, N);
             
-            advect(1, Vx, &Vx0, &Vx0, &Vy0, dt, self.width, self.height);
-            advect(2, Vy, &Vy0, &Vx0, &Vy0, dt, self.width, self.height);
+            advect(1, vx, &vx0, &vx0, &vy0, dt, self.width, self.height);
+            advect(2, vy, &vy0, &vx0, &vy0, dt, self.width, self.height);
             
-            // project(Vx, Vy, Vz, Vx0, Vy0, 4, N);
+            // project(Vx, Vy, Vz, vx0, Vy0, 4, N);
             
             diffuse(0, s, density, diff, dt, 1, self.width, self.height);
-            advect(0, density, s, Vx, Vy, dt, self.width, self.height);
+            advect(0, density, s, vx, vy, dt, self.width, self.height);
         }
     }
 
@@ -379,7 +376,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             i, state.density.iter().fold(0., |acc, v| acc + v),
             state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
 
-        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize, 1000000., state.width, state.height);
+        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize, 100. * state.params.ru, state.width, state.height);
         add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]), [1., 1.]);
 
         for _ in 0..state.params.skip_frames {
