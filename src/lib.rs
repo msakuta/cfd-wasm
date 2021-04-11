@@ -70,12 +70,15 @@ impl Xor128{
     }
 }
 
+
+
 #[allow(non_upper_case_globals)]
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
-    let mut s = vec![0f64; 4 * width * height];
     let mut density = vec![0f64; 4 * width * height];
+    let mut density2 = vec![0f64; 4 * width * height];
+
 
     let mut Vx = vec![0f64; 4 * width * height];
     let mut Vy = vec![0f64; 4 * width * height];
@@ -92,14 +95,15 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     let mut particles = reset_particles();
 
     const uMax: f64 = 1.0;
-    const vMax: f64 = 0.01;
+    const vMax: f64 = 1.0;
+    const wMax: f64 = 0.01;
 
-    let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64], particles: &[(f64, f64)]| {
+    let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64], w: &[f64], particles: &[(f64, f64)]| {
         for y in 0..height {
             for x in 0..width {
-                data[(x + y * width) * 4    ] = ((u[x + y * width] % uMax) / uMax * 127.) as u8;
+                data[(x + y * width) * 4    ] = ((u[x + y * width]) / uMax * 127.) as u8;
                 data[(x + y * width) * 4 + 1] = ((v[x + y * width]) / vMax * 127.) as u8;
-                data[(x + y * width) * 4 + 2] = 0;
+                data[(x + y * width) * 4 + 2] = ((w[x + y * width]) / wMax * 127.) as u8;
                 data[(x + y * width) * 4 + 3] = 255;
             }
         }
@@ -120,7 +124,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         mouse_pos: [i32; 2],
         f: f64,
         k: f64,
-        ru: f64,
+        density: f64,
         rv: f64,
     }
 
@@ -130,11 +134,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         mouse_pos: [0, 0],
         f: 0.03,
         k: 0.056,
-        ru: 0.07,
+        density: 0.5,
         rv: 0.056,
     };
 
-    fn set_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
+    fn add_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
         let ix = |x, y| {
             ((x + width) % width + (y + height) % height * width) as usize
         };
@@ -258,9 +262,17 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         // set_bnd(b, d, N);
     }
 
+    fn decay(s: &mut [f64], decay_rate: f64) {
+        for v in s {
+            *v *= decay_rate;
+        }
+    }
+
     struct State {
         s: Vec<f64>,
         density: Vec<f64>,
+        s2: Vec<f64>,
+        density2: Vec<f64>,
         width: usize,
         height: usize,
         params: Params,
@@ -290,12 +302,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             
             diffuse(0, s, density, diff, dt, 1, self.width, self.height);
             advect(0, density, s, vx, vy, dt, self.width, self.height);
+            decay(density, 0.99);
+
+            diffuse(0, &mut self.s2, &self.density2, diff, dt, 1, self.width, self.height);
+            advect(0, &mut self.density2, &self.s2, vx, vy, dt, self.width, self.height);
+            decay(&mut self.density2, 0.99);
         }
     }
 
     let mut state = State{
-        s,
+        s: density.clone(),
         density,
+        s2: density2.clone(),
+        density2,
         width,
         height,
         params,
@@ -305,7 +324,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         vx.iter().zip(vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>()
     }
 
-    render(height, width, &mut data, &state.density, &calc_velo(&Vx, &Vy), &particles);
+    render(height, width, &mut data, &state.density, &state.density2, &calc_velo(&Vx, &Vy), &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -335,9 +354,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             i, average,
             state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
 
-        let density_phase = (i as f64 * 0.01 * std::f64::consts::PI).cos() + 1.;
-        set_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
-            density_phase * state.params.ru, state.width, state.height);
+        let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
+        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
+            density_phase * state.params.density, state.width, state.height);
+        let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
+        add_density(&mut state.density2, mouse_pos[0] as usize, mouse_pos[1] as usize,
+            density2_phase * state.params.density, state.width, state.height);
         let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]),
             [state.params.rv * angle_rad.cos(), state.params.rv * angle_rad.sin()]);
@@ -355,7 +377,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             }
         }
 
-        render(height, width, &mut data, &state.density, &velo, &particles);
+        render(height, width, &mut data, &state.density, &state.density2, &velo, &particles);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
@@ -380,7 +402,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("skipFrames", |params, value| params.skip_frames = value as u32);
         assign_state("f", |params, value| params.f = value);
         assign_state("k", |params, value| params.k = value);
-        assign_state("ru", |params, value| params.ru = value);
+        assign_state("density", |params, value| params.density = value);
         assign_state("rv", |params, value| params.rv = value);
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
