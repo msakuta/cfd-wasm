@@ -144,7 +144,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let ix = |x, y| {
             ((x + width) % width + (y + height) % height * width) as usize
         };
-        density[ix(x, y)] = amount;
+        density[ix(x, y)] += amount;
     }
 
     fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
@@ -203,11 +203,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             for j in 0..iheight {
                 for i in 0..iwidth {
                     x[ix(i, j)] = (x0[ix(i, j)]
-                            + a*(    x0[ix(i+1, j  )]
-                                    +x0[ix(i-1, j  )]
-                                    +x0[ix(i  , j+1)]
-                                    +x0[ix(i  , j-1)]
-                            )) * c_recip;
+                        + a*(x[ix(i+1, j  )]
+                            +x[ix(i-1, j  )]
+                            +x[ix(i  , j+1)]
+                            +x[ix(i  , j-1)]
+                        )) * c_recip;
                 }
             }
             // set_bnd(b, x, N);
@@ -291,11 +291,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let mut vy0     = vy.to_vec();
             let s       = &mut self.s;
             let density = &mut self.density;
+            let diffuse_iter = 4;
 
             console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-            diffuse(1, &mut vx0, vx, visc, dt, 1, self.width, self.height);
-            diffuse(2, &mut vy0, vy, visc, dt, 1, self.width, self.height);
+            diffuse(1, &mut vx0, vx, visc, dt, diffuse_iter, self.width, self.height);
+            diffuse(2, &mut vy0, vy, visc, dt, diffuse_iter, self.width, self.height);
             
             // project(vx0, Vy0, Vz0, Vx, Vy, 4, N);
             
@@ -304,7 +305,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             
             // project(Vx, Vy, Vz, vx0, Vy0, 4, N);
             
-            diffuse(0, s, density, diff, dt, 1, self.width, self.height);
+            diffuse(0, s, density, diff, dt, diffuse_iter, self.width, self.height);
             advect(0, density, s, vx, vy, dt, self.width, self.height);
             decay(density, 1. - self.params.decay);
 

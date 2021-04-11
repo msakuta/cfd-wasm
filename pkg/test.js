@@ -13,7 +13,7 @@ async function run() {
   var skipFrames = 1;
   var visc = 0.03;
   var diff = 0.056;
-  var density = 5.0;
+  var density = 50.0;
   var decay = 0.01;
   var rv = 0.056;
   var mousePos;
