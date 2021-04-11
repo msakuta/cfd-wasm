@@ -11,9 +11,10 @@ async function run() {
 
   var deltaTime = 1.0;
   var skipFrames = 1;
-  var f = 0.03;
-  var k = 0.056;
+  var visc = 0.03;
+  var diff = 0.056;
   var density = 5.0;
+  var decay = 0.01;
   var rv = 0.056;
   var mousePos;
 
@@ -36,9 +37,10 @@ async function run() {
   }
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
-  const fSlider = sliderInit("f", "fLabel", value => f = value);
-  const kSlider = sliderInit("k", "kLabel", value => k = value);
-  const ruSlider = sliderInit("density", "densityLabel", value => density = value);
+  const fSlider = sliderInit("visc", "viscLabel", value => visc = value);
+  const diffSlider = sliderInit("diff", "diffLabel", value => diff = value);
+  const densitySlider = sliderInit("density", "densityLabel", value => density = value);
+  const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
   const rvSlider = sliderInit("rv", "rvLabel", value => rv = value);
   let resetParticles = false;
 
@@ -67,9 +69,10 @@ async function run() {
                     mousePos,
                     deltaTime,
                     skipFrames,
-                    f,
-                    k,
+                    visc,
+                    diff,
                     density,
+                    decay,
                     rv,
                     resetParticles,
                 };
