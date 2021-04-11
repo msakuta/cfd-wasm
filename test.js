@@ -13,7 +13,7 @@ async function run() {
   var skipFrames = 1;
   var f = 0.03;
   var k = 0.056;
-  var ru = 0.07;
+  var density = 5.0;
   var rv = 0.056;
   var mousePos;
 
@@ -38,7 +38,7 @@ async function run() {
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
   const fSlider = sliderInit("f", "fLabel", value => f = value);
   const kSlider = sliderInit("k", "kLabel", value => k = value);
-  const ruSlider = sliderInit("ru", "ruLabel", value => ru = value);
+  const ruSlider = sliderInit("density", "densityLabel", value => density = value);
   const rvSlider = sliderInit("rv", "rvLabel", value => rv = value);
   let resetParticles = false;
 
@@ -69,7 +69,7 @@ async function run() {
                     skipFrames,
                     f,
                     k,
-                    ru,
+                    density,
                     rv,
                     resetParticles,
                 };
