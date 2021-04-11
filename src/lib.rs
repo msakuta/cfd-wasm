@@ -122,9 +122,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         delta_time: f64,
         skip_frames: u32,
         mouse_pos: [i32; 2],
-        f: f64,
-        k: f64,
+        visc: f64,
+        diff: f64,
         density: f64,
+        decay: f64,
         rv: f64,
     }
 
@@ -132,9 +133,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         delta_time: 1.,
         skip_frames: 1,
         mouse_pos: [0, 0],
-        f: 0.03,
-        k: 0.056,
+        visc: 0.03,
+        diff: 0.056,
         density: 0.5,
+        decay: 0.01,
         rv: 0.056,
     };
 
@@ -282,14 +284,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
 
         fn fluid_step(&mut self, vx: &mut [f64], vy: &mut [f64]) {
-            let visc     = 0.05;
-            let diff     = 0.025;
+            let visc     = self.params.visc;
+            let diff     = self.params.diff;
             let dt       = self.params.delta_time;
             let mut vx0     = vx.to_vec();
             let mut vy0     = vy.to_vec();
             let s       = &mut self.s;
             let density = &mut self.density;
-            
+
+            console_log!("diffusion: {} viscousity: {}", diff, visc);
+
             diffuse(1, &mut vx0, vx, visc, dt, 1, self.width, self.height);
             diffuse(2, &mut vy0, vy, visc, dt, 1, self.width, self.height);
             
@@ -302,11 +306,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             
             diffuse(0, s, density, diff, dt, 1, self.width, self.height);
             advect(0, density, s, vx, vy, dt, self.width, self.height);
-            decay(density, 0.99);
+            decay(density, 1. - self.params.decay);
 
             diffuse(0, &mut self.s2, &self.density2, diff, dt, 1, self.width, self.height);
             advect(0, &mut self.density2, &self.s2, vx, vy, dt, self.width, self.height);
-            decay(&mut self.density2, 0.99);
+            decay(&mut self.density2, 1. - self.params.decay);
         }
     }
 
@@ -334,7 +338,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     console_log!("Starting frames");
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        let Params{delta_time, f, k, mouse_pos, ..} = state.params;
+        let Params{delta_time, visc: f, diff: k, mouse_pos, ..} = state.params;
         // console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
         //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
 
@@ -352,7 +356,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
             i, average,
-            state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)), mouse_pos);
+            state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
+            mouse_pos);
 
         let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
         add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
@@ -400,9 +405,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         };
         assign_state("deltaTime", |params, value| params.delta_time = value);
         assign_state("skipFrames", |params, value| params.skip_frames = value as u32);
-        assign_state("f", |params, value| params.f = value);
-        assign_state("k", |params, value| params.k = value);
+        assign_state("visc", |params, value| params.visc = value);
+        assign_state("diff", |params, value| params.diff = value);
         assign_state("density", |params, value| params.density = value);
+        assign_state("decay", |params, value| params.decay = value);
         assign_state("rv", |params, value| params.rv = value);
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
