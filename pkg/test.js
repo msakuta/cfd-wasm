@@ -11,11 +11,11 @@ async function run() {
 
   var deltaTime = 1.0;
   var skipFrames = 1;
-  var visc = 0.03;
-  var diff = 0.056;
+  var visc = 0.01;
+  var diff = 0.;
   var density = 50.0;
   var decay = 0.01;
-  var rv = 0.056;
+  var rv = 0.75;
   var mousePos;
 
   const ctx = canvas.getContext('2d');
@@ -41,7 +41,7 @@ async function run() {
   const diffSlider = sliderInit("diff", "diffLabel", value => diff = value);
   const densitySlider = sliderInit("density", "densityLabel", value => density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
-  const rvSlider = sliderInit("rv", "rvLabel", value => rv = value);
+  const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
   let resetParticles = false;
 
   const buttonResetParticles = document.getElementById("buttonResetParticles");

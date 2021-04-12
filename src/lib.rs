@@ -126,18 +126,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         diff: f64,
         density: f64,
         decay: f64,
-        rv: f64,
+        velo: f64,
     }
 
     let params = Params{
         delta_time: 1.,
         skip_frames: 1,
         mouse_pos: [0, 0],
-        visc: 0.03,
-        diff: 0.056,
+        visc: 0.01,
+        diff: 0., // Diffusion seems ok with 0, since viscousity and Gauss-Seidel blends up anyway.
         density: 0.5,
         decay: 0.01,
-        rv: 0.056,
+        velo: 0.75,
     };
 
     fn add_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
@@ -440,7 +440,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let mut hasher = Xor128::new((i / 16) as u32);
         let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]),
-            [state.params.rv * angle_rad.cos(), state.params.rv * angle_rad.sin()]);
+            [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step(&mut Vx, &mut Vy);
@@ -482,7 +482,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("diff", |params, value| params.diff = value);
         assign_state("density", |params, value| params.density = value);
         assign_state("decay", |params, value| params.decay = value);
-        assign_state("rv", |params, value| params.rv = value);
+        assign_state("velo", |params, value| params.velo = value);
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
                 if let Ok(the_val) = js_sys::Reflect::get_u32(&new_val, i) {
