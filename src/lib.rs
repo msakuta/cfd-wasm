@@ -264,6 +264,65 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         // set_bnd(b, d, N);
     }
 
+    fn divergence(vx: &[f64], vy: &[f64], (width, height): (usize, usize), mut proc: impl FnMut((isize, isize), f64)) {
+        let (iwidth, iheight) = (width as isize, height as isize);
+        let ix = |x, y| {
+            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
+        };
+        for j in 0..iheight {
+            for i in 0..iwidth {
+                proc((i, j),
+                    vx[ix(i+1, j  )]
+                    -vx[ix(i-1, j  )]
+                    +vy[ix(i  , j+1)]
+                    -vy[ix(i  , j-1)])
+            }
+        }
+    }
+
+    fn sum_divergence(vx: &[f64], vy: &[f64], size: (usize, usize)) -> (f64, f64) {
+        let mut sum = 0.;
+        let mut max = 0.;
+        divergence(vx, vy, size, |_, div| {
+            sum += div;
+            max = div.max(max);
+        });
+        (sum, max)
+    }
+
+    fn project(velocX: &mut [f64], velocY: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, (width, height): (usize, usize)) {
+        let (iwidth, iheight) = (width as isize, height as isize);
+        let ix = |x, y| {
+            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
+        };
+        for j in 0..iheight {
+            for i in 0..iwidth {
+                div[ix(i, j)] = -0.5*(
+                        velocX[ix(i+1, j  )]
+                        -velocX[ix(i-1, j  )]
+                        +velocY[ix(i  , j+1)]
+                        -velocY[ix(i  , j-1)]
+                    ) / width as f64;
+                p[ix(i, j)] = 0.;
+            }
+        }
+        // set_bnd(0, div, N); 
+        // set_bnd(0, p, N);
+        lin_solve(0, p, div, 1., 4., iter, width, height);
+
+        for j in 0..iheight {
+            for i in 0..iwidth {
+                velocX[ix(i, j)] -= 0.5 * (  p[ix(i+1, j)]
+                                                -p[ix(i-1, j)]) * width as f64;
+                velocY[ix(i, j)] -= 0.5 * (  p[ix(i, j+1)]
+                                                -p[ix(i, j-1)]) * height as f64;
+            }
+        }
+        // set_bnd(1, velocX, N);
+        // set_bnd(2, velocY, N);
+        // set_bnd(3, velocZ, N);
+    }
+
     fn decay(s: &mut [f64], decay_rate: f64) {
         for v in s {
             *v *= decay_rate;
@@ -292,18 +351,27 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let s       = &mut self.s;
             let density = &mut self.density;
             let diffuse_iter = 4;
+            let project_iter = 20;
+            let mut work = vec![0f64; self.width * self.height];
+            let mut work2 = vec![0f64; self.width * self.height];
 
-            console_log!("diffusion: {} viscousity: {}", diff, visc);
+            // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
             diffuse(1, &mut vx0, vx, visc, dt, diffuse_iter, self.width, self.height);
             diffuse(2, &mut vy0, vy, visc, dt, diffuse_iter, self.width, self.height);
-            
-            // project(vx0, Vy0, Vz0, Vx, Vy, 4, N);
+
+            let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+            project(&mut vx0, &mut vy0, &mut work, &mut work2, project_iter, (self.width, self.height));
+            let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+            console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
             advect(1, vx, &vx0, &vx0, &vy0, dt, self.width, self.height);
             advect(2, vy, &vy0, &vx0, &vy0, dt, self.width, self.height);
             
-            // project(Vx, Vy, Vz, vx0, Vy0, 4, N);
+            let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
+            project(vx, vy, &mut work, &mut work2, project_iter, (self.width, self.height));
+            let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
+            console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
             diffuse(0, s, density, diff, dt, diffuse_iter, self.width, self.height);
             advect(0, density, s, vx, vy, dt, self.width, self.height);
@@ -352,6 +420,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         };
 
         let velo = calc_velo(&Vx, &Vy);
+        // let mut div = vec![0f64; width * height];
+        // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
         let average = state.density.iter().fold(0., |acc, v| acc + v);
 
@@ -366,7 +436,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
         add_density(&mut state.density2, mouse_pos[0] as usize, mouse_pos[1] as usize,
             density2_phase * state.params.density, state.width, state.height);
-        let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
+        // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
+        let mut hasher = Xor128::new((i / 16) as u32);
+        let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]),
             [state.params.rv * angle_rad.cos(), state.params.rv * angle_rad.sin()]);
 
