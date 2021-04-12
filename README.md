@@ -4,7 +4,7 @@
 
 Computational Fluid Dynamics simulation with Webassembly and Rust.
 
-Try it now with your browser!
+Try it now on your browser!
 
 https://msakuta.github.io/cfd-wasm/
 
@@ -35,16 +35,21 @@ Browse http://localhost:5000/
 
 ## Controls
 
-You can move your mouse cursor on the simulation to disturb the field. It may create a new pattern, depending on the parameters.
+You can move your mouse cursor on the simulation to disturb the field.
+A dye of red and green color will emit from the mouse cursor in random
+directions.
 
 You can control the parameters with sliders on the bottom half of the screen.
 
 "Time step" and "Skip frames" both contributes to the speed of the simulation.
 
-## Parameter presets
+## A bit of History
 
-Reaction-diffusion system is very sensitive to parameters. Interesting patterns show up only in very certain combination of parameters.
-So there are buttons to set the parameters to one of these interesting sets.
+This project is a fork of [rd-system-wasm](https://github.com/msakuta/rd-system-wasm) because of obvious similarity
+in simulation model.
+
+However, the solver is very different. This project uses more stable solver (see the references),
+so it wouldn't diverge even if you put extreme parameters.
 
 ## The tutorial that I used
 
@@ -56,3 +61,5 @@ https://aralroca.com/blog/first-steps-webassembly-rust
 https://mikeash.com/pyblog/fluid-simulation-for-dummies.html
 
 https://www.dgp.toronto.edu/public_user/stam/reality/Research/pdf/GDC03.pdf
+
+https://youtu.be/qsYE1wMEMPA
