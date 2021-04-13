@@ -43,6 +43,17 @@ You can control the parameters with sliders on the bottom half of the screen.
 
 "Time step" and "Skip frames" both contributes to the speed of the simulation.
 
+### Gauss-Seidel method parameters
+
+The accuracy of the simulation is determined by 2 parameters:
+
+* Gauss-Seidel iter for diffusion (default=4)
+* Gauss-Seidel iter for projection (default=20)
+
+Increasing these values will improve accuracy, but it would take more computation per step.
+Personally, I feel Ok with low value with diffusion, but projection is better to keep it high
+for nice swirly fluid behavior.
+
 ## A bit of History
 
 This project is a fork of [rd-system-wasm](https://github.com/msakuta/rd-system-wasm) because of obvious similarity
