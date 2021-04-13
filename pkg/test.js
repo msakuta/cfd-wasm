@@ -18,6 +18,8 @@ async function run() {
   var rv = 0.75;
   var wrapX = false;
   var wrapY = false;
+  var diffIter = 4;
+  var projIter = 10;
   var mousePos;
 
   const ctx = canvas.getContext('2d');
@@ -54,6 +56,8 @@ async function run() {
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
   const wrapXCheck = checkboxInit("wrapX", value => wrapX = value);
   const wrapYCheck = checkboxInit("wrapY", value => wrapY = value);
+  const diffIterSlider = sliderInit("diffIter", "diffIterLabel", value => diffIter = value);
+  const projIterSlider = sliderInit("projIter", "projIterLabel", value => projIter = value);
   let resetParticles = false;
 
   const buttonResetParticles = document.getElementById("buttonResetParticles");
@@ -88,6 +92,8 @@ async function run() {
                     rv,
                     wrapX,
                     wrapY,
+                    diffIter,
+                    projIter,
                     resetParticles,
                 };
                 resetParticles = false;

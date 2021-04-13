@@ -299,6 +299,8 @@ struct Params{
     density: f64,
     decay: f64,
     velo: f64,
+    diffuse_iter: usize,
+    project_iter: usize,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
 }
@@ -331,6 +333,8 @@ impl State {
             density: 0.5,
             decay: 0.01,
             velo: 0.75,
+            diffuse_iter: 4,
+            project_iter: 20,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         };
@@ -359,8 +363,8 @@ impl State {
         let visc     = self.params.visc;
         let diff     = self.params.diff;
         let dt       = self.params.delta_time;
-        let diffuse_iter = 4;
-        let project_iter = 20;
+        let diffuse_iter = self.params.diffuse_iter;
+        let project_iter = self.params.project_iter;
         let shape = self.shape;
 
         self.vx0.copy_from_slice(&self.vx);
@@ -448,7 +452,6 @@ impl State {
     }
 }
 
-#[allow(non_upper_case_globals)]
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -522,6 +525,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 }
             }
         };
+        let assign_usize = |name: &str, setter: &mut dyn FnMut(usize)| {
+            if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
+                if let Some(the_val) = new_val.as_f64() {
+                    // console_log!("received {} value: {}", name, the_val);
+                    // let mut params_ref = (*params).borrow_mut();
+                    // setter(&mut params_ref, the_val);
+                    setter(the_val as usize);
+                }
+            }
+        };
         let assign_check = |name: &str, setter: &mut dyn FnMut(bool)| {
             if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
                 if let Some(the_val) = new_val.as_bool() {
@@ -542,6 +555,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("density", &mut |value| state.params.density = value);
         assign_state("decay", &mut |value| state.params.decay = value);
         assign_state("velo", &mut |value| state.params.velo = value);
+        assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
+        assign_usize("projIter", &mut |value| state.params.project_iter = value);
         assign_check("wrapX", &mut |value| state.params.boundary_x = if value { Wrap } else { Fixed });
         assign_check("wrapY", &mut |value| state.params.boundary_y = if value { Wrap } else { Fixed });
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {

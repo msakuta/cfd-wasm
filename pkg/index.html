@@ -63,6 +63,14 @@
         <input id="velo" type="range" max="1" min="1e-3" step="1e-3" value="0.75">
       </div>
       <div>
+        Gauss-Seidel iter for diffusion=<span id="diffIterLabel"></span>
+        <input id="diffIter" type="range" max="50" min="1" step="1" value="4">
+      </div>
+      <div>
+        Gauss-Seidel iter for projection=<span id="projIterLabel"></span>
+        <input id="projIter" type="range" max="50" min="1" step="1" value="10">
+      </div>
+      <div>
         <label>
           <input type="checkbox" id="wrapX">
           Wrap boundary X
