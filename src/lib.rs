@@ -90,28 +90,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     };
     let mut particles = reset_particles();
 
-    const uMax: f64 = 1.0;
-    const vMax: f64 = 1.0;
-    const wMax: f64 = 0.01;
-
-    let render = |height, width, data: &mut Vec<u8>, u: &[f64], v: &[f64], w: &[f64], particles: &[(f64, f64)]| {
-        for y in 0..height {
-            for x in 0..width {
-                data[(x + y * width) * 4    ] = ((u[x + y * width]) / uMax * 127.) as u8;
-                data[(x + y * width) * 4 + 1] = ((v[x + y * width]) / vMax * 127.) as u8;
-                data[(x + y * width) * 4 + 2] = ((w[x + y * width]) / wMax * 127.) as u8;
-                data[(x + y * width) * 4 + 3] = 255;
-            }
-        }
-
-        for particle in particles {
-            let (x, y) = (particle.0 as usize, particle.1 as usize);
-            data[(x + y * width) * 4    ] = 255;
-            data[(x + y * width) * 4 + 1] = 255;
-            data[(x + y * width) * 4 + 2] = 255;
-            data[(x + y * width) * 4 + 3] = 255;
-        }
-    };
 
     #[derive(Copy, Clone)]
     struct Params{
@@ -337,6 +315,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         params: Params,
     }
 
+    const uMax: f64 = 1.0;
+    const vMax: f64 = 1.0;
+    const wMax: f64 = 0.01;
+
     impl State {
         fn fluid_step(&mut self) {
             let visc     = self.params.visc;
@@ -375,6 +357,26 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape);
             decay(&mut self.density2, 1. - self.params.decay);
         }
+
+        fn render(&self, data: &mut Vec<u8>, u: &[f64], v: &[f64], w: &[f64], particles: &[(f64, f64)]) {
+            let shape = &self.shape;
+            for y in 0..self.shape.1 {
+                for x in 0..self.shape.0 {
+                    data[shape.idx(x, y) * 4    ] = ((u[shape.idx(x, y)]) / uMax * 127.) as u8;
+                    data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / vMax * 127.) as u8;
+                    data[shape.idx(x, y) * 4 + 2] = ((w[shape.idx(x, y)]) / wMax * 127.) as u8;
+                    data[shape.idx(x, y) * 4 + 3] = 255;
+                }
+            }
+
+            for particle in particles {
+                let (x, y) = (particle.0 as isize, particle.1 as isize);
+                data[shape.idx(x, y) * 4    ] = 255;
+                data[shape.idx(x, y) * 4 + 1] = 255;
+                data[shape.idx(x, y) * 4 + 2] = 255;
+                data[shape.idx(x, y) * 4 + 3] = 255;
+            }
+        }
     }
 
     let mut state = State{
@@ -394,7 +396,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         vx.iter().zip(vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>()
     }
 
-    render(height, width, &mut data, &state.density, &state.density2, &calc_velo(&state.vx, &state.vy), &particles);
+    state.render(&mut data, &state.density, &state.density2, &calc_velo(&state.vx, &state.vy), &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -452,7 +454,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             }
         }
 
-        render(height, width, &mut data, &state.density, &state.density2, &velo, &particles);
+        state.render(&mut data, &state.density, &state.density2, &velo, &particles);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
