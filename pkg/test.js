@@ -16,6 +16,7 @@ async function run() {
   var density = 50.0;
   var decay = 0.01;
   var rv = 0.75;
+  var wrapY = false;
   var mousePos;
 
   const ctx = canvas.getContext('2d');
@@ -35,6 +36,14 @@ async function run() {
     sliderUpdater.push(update);
     return slider;
   }
+  function checkboxInit(checkboxId, writer){
+    const checkbox = document.getElementById(checkboxId);
+    const update = (_event) => {
+      writer(checkbox.checked);
+    }
+    checkbox.addEventListener("click", update);
+    return checkbox;
+  }
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
   const fSlider = sliderInit("visc", "viscLabel", value => visc = value);
@@ -42,6 +51,7 @@ async function run() {
   const densitySlider = sliderInit("density", "densityLabel", value => density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
+  const wrapYCheck = checkboxInit("wrapY", value => wrapY = value);
   let resetParticles = false;
 
   const buttonResetParticles = document.getElementById("buttonResetParticles");
@@ -74,6 +84,7 @@ async function run() {
                     density,
                     decay,
                     rv,
+                    wrapY,
                     resetParticles,
                 };
                 resetParticles = false;

@@ -110,15 +110,19 @@ fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
     vy[index] += amount[1];
 }
 
-fn set_bnd(b: i32, x: &mut [f64], shape: Shape) {
+fn set_bnd(b: i32, x: &mut [f64], shape: Shape, boundary: BoundaryCondition) {
     // Edge cases
-    for i in 1..shape.0 - 1 {
-        x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
-        x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
+    if boundary == BoundaryCondition::Fixed {
+        for i in 1..shape.0 - 1 {
+            x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
+            x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
+        }
     }
-    for j in 1..shape.1 - 1 {
-        x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
-        x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
+    if false {
+        for j in 1..shape.1 - 1 {
+            x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
+            x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
+        }
     }
 
     // Corner cases (literally)
@@ -151,10 +155,11 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape) {
 ///
 /// @param b ignored
 /// @param x Target field to be solved
-fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape) {
+fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape, bound_y: BoundaryCondition) {
     let c_recip = 1.0 / c;
+    let (j0, j1) = if bound_y == BoundaryCondition::Fixed { (1, shape.1-1) } else { (0, shape.1) };
     for _ in 0..iter {
-        for j in 0..shape.1 {
+        for j in j0..j1 {
             for i in 0..shape.0 {
                 x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
                     + a*(x[shape.idx(i+1, j  )]
@@ -164,16 +169,16 @@ fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, sha
                     )) * c_recip;
             }
         }
-        // set_bnd(b, x, N);
+        set_bnd(b, x, shape, bound_y);
     }
 }
 
-fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape) {
+fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape, boundary: BoundaryCondition) {
     let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
-    lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
+    lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape, boundary);
 }
 
-fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape) {
+fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape, boundary: BoundaryCondition) {
     let dtx = dt * (shape.0 - 2) as f64;
     let dty = dt * (shape.1 - 2) as f64;
 
@@ -182,14 +187,17 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
         for i in 0..shape.0 {
             let ifloat = i as f64;
             let x    = ifloat - dtx * vx[shape.idx(i, j)];
-            let y    = jfloat - dty * vy[shape.idx(i, j)];
+            
             
             // if x < 0.5 { x = 0.5 }
             // if x > fwidth + 0.5 { x = fwidth + 0.5 };
             let i0 = x.floor();
             let i1 = i0 + 1.0;
-            // if y < 0.5 { y = 0.5 }
-            // if y > fheight + 0.5 { y = fheight + 0.5 };
+            let mut y = jfloat - dty * vy[shape.idx(i, j)];
+            if boundary == BoundaryCondition::Fixed {
+                if y < 0.5 { y = 0.5 }
+                if y > shape.1 as f64 + 0.5 { y = shape.1 as f64 + 0.5 }
+            }
             let j0 = y.floor();
             let j1 = j0 + 1.0; 
             
@@ -210,7 +218,7 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
                     +( t1 * (d0[shape.idx(i1i, j1i)])));
         }
     }
-    // set_bnd(b, d, N);
+    set_bnd(b, d, shape, boundary);
 }
 
 fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
@@ -235,7 +243,7 @@ fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
     (sum, max)
 }
 
-fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
+fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, boundary: BoundaryCondition) {
     for j in 0..shape.1 {
         for i in 0..shape.0 {
             div[shape.idx(i, j)] = -0.5*(
@@ -249,7 +257,7 @@ fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter:
     }
     // set_bnd(0, div, N); 
     // set_bnd(0, p, N);
-    lin_solve(0, p, div, 1., 4., iter, shape);
+    lin_solve(0, p, div, 1., 4., iter, shape, boundary);
 
     for j in 0..shape.1 {
         for i in 0..shape.0 {
@@ -278,6 +286,11 @@ fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
     }).collect::<Vec<_>>()
 }
 
+#[derive(Copy, Clone, PartialEq)]
+enum BoundaryCondition {
+    Wrap,
+    Fixed,
+}
 
 #[derive(Copy, Clone)]
 struct Params{
@@ -289,6 +302,7 @@ struct Params{
     density: f64,
     decay: f64,
     velo: f64,
+    boundary_y: BoundaryCondition,
 }
 
 struct State {
@@ -319,6 +333,7 @@ impl State {
             density: 0.5,
             decay: 0.01,
             velo: 0.75,
+            boundary_y: BoundaryCondition::Fixed,
         };
 
         let shape = (width as isize, height as isize);
@@ -354,28 +369,28 @@ impl State {
 
         // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape);
-        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape);
+        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape, self.params.boundary_y);
+        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape, self.params.boundary_y);
 
         // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape);
+        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape, self.params.boundary_y);
         // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-        
-        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape);
-        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape);
-        
+
+        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape, self.params.boundary_y);
+        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape, self.params.boundary_y);
+
         // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape);
+        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape, self.params.boundary_y);
         // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-        
-        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape);
-        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape);
+
+        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape, self.params.boundary_y);
+        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape, self.params.boundary_y);
         decay(&mut self.density, 1. - self.params.decay);
 
-        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape);
-        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape);
+        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape, self.params.boundary_y);
+        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape, self.params.boundary_y);
         decay(&mut self.density2, 1. - self.params.decay);
     }
 
@@ -498,23 +513,37 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         if terminate_requested.is_truthy() {
             return
         }
-        let mut assign_state = |name: &str, setter: fn(params: &mut Params, val: f64)| {
+        let assign_state = |name: &str, setter: &mut dyn FnMut(f64)| {
             if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
                 if let Some(the_val) = new_val.as_f64() {
                     // console_log!("received {} value: {}", name, the_val);
                     // let mut params_ref = (*params).borrow_mut();
                     // setter(&mut params_ref, the_val);
-                    setter(&mut state.params, the_val);
+                    setter(the_val);
                 }
             }
         };
-        assign_state("deltaTime", |params, value| params.delta_time = value);
-        assign_state("skipFrames", |params, value| params.skip_frames = value as u32);
-        assign_state("visc", |params, value| params.visc = value);
-        assign_state("diff", |params, value| params.diff = value);
-        assign_state("density", |params, value| params.density = value);
-        assign_state("decay", |params, value| params.decay = value);
-        assign_state("velo", |params, value| params.velo = value);
+        let assign_check = |name: &str, setter: &mut dyn FnMut(bool)| {
+            if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
+                if let Some(the_val) = new_val.as_bool() {
+                    // console_log!("received {} value: {}", name, the_val);
+                    // let mut params_ref = (*params).borrow_mut();
+                    // setter(&mut params_ref, the_val);
+                    setter(the_val);
+                }
+            }
+        };
+
+        use BoundaryCondition::{Wrap, Fixed};
+
+        assign_state("deltaTime", &mut |value| state.params.delta_time = value);
+        assign_state("skipFrames", &mut |value| state.params.skip_frames = value as u32);
+        assign_state("visc", &mut |value| state.params.visc = value);
+        assign_state("diff", &mut |value| state.params.diff = value);
+        assign_state("density", &mut |value| state.params.density = value);
+        assign_state("decay", &mut |value| state.params.decay = value);
+        assign_state("velo", &mut |value| state.params.velo = value);
+        assign_check("wrapY", &mut |value| state.params.boundary_y = if value { Wrap } else { Fixed });
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
                 if let Ok(the_val) = js_sys::Reflect::get_u32(&new_val, i) {
