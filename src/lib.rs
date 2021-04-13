@@ -227,7 +227,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
     }
 
-    fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, shape: Shape) {
+    fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape) {
         let dtx = dt * (shape.0 - 2) as f64;
         let dty = dt * (shape.1 - 2) as f64;
 
@@ -235,8 +235,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let jfloat = j as f64;
             for i in 0..shape.0 {
                 let ifloat = i as f64;
-                let x    = ifloat - dtx * velocX[shape.idx(i, j)];
-                let y    = jfloat - dty * velocY[shape.idx(i, j)];
+                let x    = ifloat - dtx * vx[shape.idx(i, j)];
+                let y    = jfloat - dty * vy[shape.idx(i, j)];
                 
                 // if x < 0.5 { x = 0.5 }
                 // if x > fwidth + 0.5 { x = fwidth + 0.5 };
@@ -289,14 +289,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         (sum, max)
     }
 
-    fn project(velocX: &mut [f64], velocY: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
+    fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
         for j in 0..shape.1 {
             for i in 0..shape.0 {
                 div[shape.idx(i, j)] = -0.5*(
-                        velocX[shape.idx(i+1, j  )]
-                        -velocX[shape.idx(i-1, j  )]
-                        +velocY[shape.idx(i  , j+1)]
-                        -velocY[shape.idx(i  , j-1)]
+                        vx[shape.idx(i+1, j  )]
+                        -vx[shape.idx(i-1, j  )]
+                        +vy[shape.idx(i  , j+1)]
+                        -vy[shape.idx(i  , j-1)]
                     ) / shape.0 as f64;
                 p[shape.idx(i, j)] = 0.;
             }
@@ -307,9 +307,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         for j in 0..shape.1 {
             for i in 0..shape.0 {
-                velocX[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
+                vx[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
                                                 -p[shape.idx(i-1, j)]) * shape.0 as f64;
-                velocY[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
+                vy[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
                                                 -p[shape.idx(i, j-1)]) * shape.1 as f64;
             }
         }
@@ -404,7 +404,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     console_log!("Starting frames");
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        let Params{delta_time, visc: f, diff: k, mouse_pos, ..} = state.params;
+        let Params{mouse_pos, ..} = state.params;
         // console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
         //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
 
