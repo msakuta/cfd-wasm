@@ -76,12 +76,8 @@ impl Xor128{
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
-    let mut density = vec![0f64; 4 * width * height];
-    let mut density2 = vec![0f64; 4 * width * height];
-
-
-    let mut Vx = vec![0f64; 4 * width * height];
-    let mut Vy = vec![0f64; 4 * width * height];
+    let density = vec![0f64; 4 * width * height];
+    let density2 = vec![0f64; 4 * width * height];
 
     let mut data = vec![0u8; 4 * width * height];
 
@@ -330,10 +326,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     }
 
     struct State {
-        s: Vec<f64>,
         density: Vec<f64>,
-        s2: Vec<f64>,
         density2: Vec<f64>,
+        vx: Vec<f64>,
+        vy: Vec<f64>,
+        vx0: Vec<f64>,
+        vy0: Vec<f64>,
+        work: Vec<f64>,
+        work2: Vec<f64>,
         width: usize,
         height: usize,
         params: Params,
@@ -342,52 +342,53 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     impl State {
 
 
-        fn fluid_step(&mut self, vx: &mut [f64], vy: &mut [f64]) {
+        fn fluid_step(&mut self) {
             let visc     = self.params.visc;
             let diff     = self.params.diff;
             let dt       = self.params.delta_time;
-            let mut vx0     = vx.to_vec();
-            let mut vy0     = vy.to_vec();
-            let s       = &mut self.s;
-            let density = &mut self.density;
             let diffuse_iter = 4;
             let project_iter = 20;
-            let mut work = vec![0f64; self.width * self.height];
-            let mut work2 = vec![0f64; self.width * self.height];
+
+            self.vx0.copy_from_slice(&self.vx);
+            self.vy0.copy_from_slice(&self.vy);
 
             // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-            diffuse(1, &mut vx0, vx, visc, dt, diffuse_iter, self.width, self.height);
-            diffuse(2, &mut vy0, vy, visc, dt, diffuse_iter, self.width, self.height);
+            diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, self.width, self.height);
+            diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, self.width, self.height);
 
-            let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-            project(&mut vx0, &mut vy0, &mut work, &mut work2, project_iter, (self.width, self.height));
-            let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-            console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
+            // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+            project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, (self.width, self.height));
+            // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+            // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
-            advect(1, vx, &vx0, &vx0, &vy0, dt, self.width, self.height);
-            advect(2, vy, &vy0, &vx0, &vy0, dt, self.width, self.height);
+            advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, self.width, self.height);
+            advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, self.width, self.height);
             
-            let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-            project(vx, vy, &mut work, &mut work2, project_iter, (self.width, self.height));
-            let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
-            console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
+            // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
+            project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, (self.width, self.height));
+            // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
+            // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
-            diffuse(0, s, density, diff, dt, diffuse_iter, self.width, self.height);
-            advect(0, density, s, vx, vy, dt, self.width, self.height);
-            decay(density, 1. - self.params.decay);
+            diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, self.width, self.height);
+            advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
+            decay(&mut self.density, 1. - self.params.decay);
 
-            diffuse(0, &mut self.s2, &self.density2, diff, dt, 1, self.width, self.height);
-            advect(0, &mut self.density2, &self.s2, vx, vy, dt, self.width, self.height);
+            diffuse(0, &mut self.work, &self.density2, diff, dt, 1, self.width, self.height);
+            advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
             decay(&mut self.density2, 1. - self.params.decay);
         }
     }
 
     let mut state = State{
-        s: density.clone(),
         density,
-        s2: density2.clone(),
         density2,
+        vx: vec![0f64; width * height],
+        vy: vec![0f64; width * height],
+        vx0: vec![0f64; width * height],
+        vy0: vec![0f64; width * height],
+        work: vec![0f64; width * height],
+        work2: vec![0f64; width * height],
         width,
         height,
         params,
@@ -397,7 +398,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         vx.iter().zip(vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>()
     }
 
-    render(height, width, &mut data, &state.density, &state.density2, &calc_velo(&Vx, &Vy), &particles);
+    render(height, width, &mut data, &state.density, &state.density2, &calc_velo(&state.vx, &state.vy), &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -419,16 +420,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
         };
 
-        let velo = calc_velo(&Vx, &Vy);
+        let velo = calc_velo(&state.vx, &state.vy);
         // let mut div = vec![0f64; width * height];
         // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
         let average = state.density.iter().fold(0., |acc, v| acc + v);
 
-        console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
-            i, average,
-            state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
-            mouse_pos);
+        // console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
+        //     i, average,
+        //     state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
+        //     mouse_pos);
 
         let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
         add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
@@ -439,15 +440,15 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         let mut hasher = Xor128::new((i / 16) as u32);
         let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
-        add_velo(&mut Vx, &mut Vy, ix(mouse_pos[0], mouse_pos[1]),
+        add_velo(&mut state.vx, &mut state.vy, ix(mouse_pos[0], mouse_pos[1]),
             [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
 
         for _ in 0..state.params.skip_frames {
-            state.fluid_step(&mut Vx, &mut Vy);
+            state.fluid_step();
 
             for particle in &mut particles {
-                let pvx = Vx[ix(particle.0 as i32, particle.1 as i32)];
-                let pvy = Vy[ix(particle.0 as i32, particle.1 as i32)];
+                let pvx = state.vx[ix(particle.0 as i32, particle.1 as i32)];
+                let pvy = state.vy[ix(particle.0 as i32, particle.1 as i32)];
                 let dtx = params.delta_time * (width - 2) as f64;
                 let dty = params.delta_time * (height - 2) as f64;
                 particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
