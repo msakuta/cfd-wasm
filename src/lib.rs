@@ -358,7 +358,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             decay(&mut self.density2, 1. - self.params.decay);
         }
 
-        fn render(&self, data: &mut Vec<u8>, u: &[f64], v: &[f64], w: &[f64], particles: &[(f64, f64)]) {
+        /// Destructively calculate speed (length of velocity vector) field using State's working memory
+        fn calc_velo(&mut self) -> &Vec<f64> {
+            self.work
+                .iter_mut()
+                .zip(self.vx.iter().zip(self.vy.iter()))
+                .for_each(|(dest, (x, y))| *dest = (x * x + y * y).sqrt());
+            &self.work
+        }
+
+        fn render(&mut self, data: &mut Vec<u8>, particles: &[(f64, f64)]) {
+            self.calc_velo();
+            let (u, v, w) = (&self.density, &self.density2, &self.work);
             let shape = &self.shape;
             for y in 0..self.shape.1 {
                 for x in 0..self.shape.0 {
@@ -392,11 +403,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         params,
     };
 
-    fn calc_velo(vx: &[f64], vy: &[f64]) -> Vec<f64> {
-        vx.iter().zip(vy.iter()).map(|(x, y)| (x * x + y * y).sqrt()).collect::<Vec<_>>()
-    }
-
-    state.render(&mut data, &state.density, &state.density2, &calc_velo(&state.vx, &state.vy), &particles);
+    state.render(&mut data, &particles);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -418,7 +425,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
         };
 
-        let velo = calc_velo(&state.vx, &state.vy);
+        // let velo = state.calc_velo(&state.vx, &state.vy);
         // let mut div = vec![0f64; width * height];
         // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
@@ -454,7 +461,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             }
         }
 
-        state.render(&mut data, &state.density, &state.density2, &velo, &particles);
+        state.render(&mut data, &particles);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
