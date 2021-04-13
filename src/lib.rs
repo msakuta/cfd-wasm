@@ -70,7 +70,306 @@ impl Xor128{
     }
 }
 
+const CHECKER_CELL: usize = 16;
 
+fn fill_checker(density: &mut [f64], (width, height): (usize, usize)) {
+    for y2 in 0..height / CHECKER_CELL {
+        for x2 in 0..width / CHECKER_CELL {
+            if (x2 + y2) % 2 == 0 {
+                for y in y2 * CHECKER_CELL..(y2 + 1) * CHECKER_CELL {
+                    for x in x2 * CHECKER_CELL..(x2 + 1) * CHECKER_CELL {
+                        density[x * width + y] = 1.;
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+trait Idx {
+    fn idx(&self, x: isize, y: isize) -> usize;
+}
+
+type Shape = (isize, isize);
+
+impl Idx for Shape {
+    fn idx(&self, x: isize, y: isize) -> usize {
+        let (width, height) = self;
+        ((x + width) % width + (y + height) % height * width) as usize
+    }
+}
+
+fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, shape: Shape) {
+    density[shape.idx(x, y)] += amount;
+}
+
+fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
+    vx[index] += amount[0];
+    vy[index] += amount[1];
+}
+
+fn set_bnd(b: i32, x: &mut [f64], shape: Shape) {
+    // Edge cases
+    for i in 1..shape.0 - 1 {
+        x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
+        x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
+    }
+    for j in 1..shape.1 - 1 {
+        x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
+        x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
+    }
+
+    // Corner cases (literally)
+    // x[shape.idx(0, 0)]       = 0.33f * (x[shape.idx(1, 0)]
+    //                             + x[shape.idx(0, 1)]);
+    // x[shape.idx(0, shape.1-1)]     = 0.33f * (x[shape.idx(1, shape.1-1, 0)]
+    //                             + x[shape.idx(0, N-2, 0)]
+    //                             + x[shape.idx(0, N-1, 1)]);
+    // x[shape.idx(0, 0)]     = 0.33f * (x[shape.idx(1, 0, N-1)]
+    //                             + x[shape.idx(0, 1, N-1)]
+    //                             + x[shape.idx(0, 0, N)]);
+    // x[shape.idx(0, N-1, N-1)]   = 0.33f * (x[shape.idx(1, N-1, N-1)]
+    //                             + x[shape.idx(0, N-2, N-1)]
+    //                             + x[shape.idx(0, N-1, N-2)]);
+    // x[shape.idx(N-1, 0, 0)]     = 0.33f * (x[shape.idx(N-2, 0, 0)]
+    //                             + x[shape.idx(N-1, 1, 0)]
+    //                             + x[shape.idx(N-1, 0, 1)]);
+    // x[shape.idx(N-1, N-1, 0)]   = 0.33f * (x[shape.idx(N-2, N-1, 0)]
+    //                             + x[shape.idx(N-1, N-2, 0)]
+    //                             + x[shape.idx(N-1, N-1, 1)]);
+    // x[shape.idx(N-1, 0, N-1)]   = 0.33f * (x[shape.idx(N-2, 0, N-1)]
+    //                             + x[shape.idx(N-1, 1, N-1)]
+    //                             + x[shape.idx(N-1, 0, N-2)]);
+    // x[shape.idx(N-1, N-1, N-1)] = 0.33f * (x[shape.idx(N-2, N-1, N-1)]
+    //                             + x[shape.idx(N-1, N-2, N-1)]
+    //                             + x[shape.idx(N-1, N-1, N-2)]);
+}
+
+/// Solve linear system of equasions using Gauss-Seidel relaxation
+///
+/// @param b ignored
+/// @param x Target field to be solved
+fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape) {
+    let c_recip = 1.0 / c;
+    for _ in 0..iter {
+        for j in 0..shape.1 {
+            for i in 0..shape.0 {
+                x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
+                    + a*(x[shape.idx(i+1, j  )]
+                        +x[shape.idx(i-1, j  )]
+                        +x[shape.idx(i  , j+1)]
+                        +x[shape.idx(i  , j-1)]
+                    )) * c_recip;
+            }
+        }
+        // set_bnd(b, x, N);
+    }
+}
+
+fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape) {
+    let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
+    lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
+}
+
+fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape) {
+    let dtx = dt * (shape.0 - 2) as f64;
+    let dty = dt * (shape.1 - 2) as f64;
+
+    for j in 0..shape.1 {
+        let jfloat = j as f64;
+        for i in 0..shape.0 {
+            let ifloat = i as f64;
+            let x    = ifloat - dtx * vx[shape.idx(i, j)];
+            let y    = jfloat - dty * vy[shape.idx(i, j)];
+            
+            // if x < 0.5 { x = 0.5 }
+            // if x > fwidth + 0.5 { x = fwidth + 0.5 };
+            let i0 = x.floor();
+            let i1 = i0 + 1.0;
+            // if y < 0.5 { y = 0.5 }
+            // if y > fheight + 0.5 { y = fheight + 0.5 };
+            let j0 = y.floor();
+            let j1 = j0 + 1.0; 
+            
+            let s1 = x - i0; 
+            let s0 = 1.0 - s1; 
+            let t1 = y - j0; 
+            let t0 = 1.0 - t1;
+            
+            let i0i = i0 as isize;
+            let i1i = i1 as isize;
+            let j0i = j0 as isize;
+            let j1i = j1 as isize;
+            
+            d[shape.idx(i, j)] = 
+                s0 * ( t0 * (d0[shape.idx(i0i, j0i)])
+                    +( t1 * (d0[shape.idx(i0i, j1i)])))
+            +s1 * ( t0 * (d0[shape.idx(i1i, j0i)])
+                    +( t1 * (d0[shape.idx(i1i, j1i)])));
+        }
+    }
+    // set_bnd(b, d, N);
+}
+
+fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
+    for j in 0..shape.1 {
+        for i in 0..shape.0 {
+            proc((i, j),
+                vx[shape.idx(i+1, j  )]
+                -vx[shape.idx(i-1, j  )]
+                +vy[shape.idx(i  , j+1)]
+                -vy[shape.idx(i  , j-1)])
+        }
+    }
+}
+
+fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
+    let mut sum = 0.;
+    let mut max = 0.;
+    divergence(vx, vy, shape, |_, div| {
+        sum += div;
+        max = div.max(max);
+    });
+    (sum, max)
+}
+
+fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
+    for j in 0..shape.1 {
+        for i in 0..shape.0 {
+            div[shape.idx(i, j)] = -0.5*(
+                    vx[shape.idx(i+1, j  )]
+                    -vx[shape.idx(i-1, j  )]
+                    +vy[shape.idx(i  , j+1)]
+                    -vy[shape.idx(i  , j-1)]
+                ) / shape.0 as f64;
+            p[shape.idx(i, j)] = 0.;
+        }
+    }
+    // set_bnd(0, div, N); 
+    // set_bnd(0, p, N);
+    lin_solve(0, p, div, 1., 4., iter, shape);
+
+    for j in 0..shape.1 {
+        for i in 0..shape.0 {
+            vx[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
+                                            -p[shape.idx(i-1, j)]) * shape.0 as f64;
+            vy[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
+                                            -p[shape.idx(i, j-1)]) * shape.1 as f64;
+        }
+    }
+    // set_bnd(1, velocX, N);
+    // set_bnd(2, velocY, N);
+    // set_bnd(3, velocZ, N);
+}
+
+fn decay(s: &mut [f64], decay_rate: f64) {
+    for v in s {
+        *v *= decay_rate;
+    }
+}
+
+
+#[derive(Copy, Clone)]
+struct Params{
+    delta_time: f64,
+    skip_frames: u32,
+    mouse_pos: [i32; 2],
+    visc: f64,
+    diff: f64,
+    density: f64,
+    decay: f64,
+    velo: f64,
+}
+
+struct State {
+    density: Vec<f64>,
+    density2: Vec<f64>,
+    vx: Vec<f64>,
+    vy: Vec<f64>,
+    vx0: Vec<f64>,
+    vy0: Vec<f64>,
+    work: Vec<f64>,
+    work2: Vec<f64>,
+    shape: Shape,
+    params: Params,
+}
+
+impl State {
+    fn fluid_step(&mut self) {
+        let visc     = self.params.visc;
+        let diff     = self.params.diff;
+        let dt       = self.params.delta_time;
+        let diffuse_iter = 4;
+        let project_iter = 20;
+        let shape = self.shape;
+
+        self.vx0.copy_from_slice(&self.vx);
+        self.vy0.copy_from_slice(&self.vy);
+
+        // console_log!("diffusion: {} viscousity: {}", diff, visc);
+
+        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape);
+        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape);
+
+        // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape);
+        // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
+        // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
+        
+        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape);
+        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape);
+        
+        // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
+        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape);
+        // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
+        // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
+        
+        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape);
+        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape);
+        decay(&mut self.density, 1. - self.params.decay);
+
+        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape);
+        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape);
+        decay(&mut self.density2, 1. - self.params.decay);
+    }
+
+    /// Destructively calculate speed (length of velocity vector) field using State's working memory
+    fn calc_velo(&mut self) -> &Vec<f64> {
+        self.work
+            .iter_mut()
+            .zip(self.vx.iter().zip(self.vy.iter()))
+            .for_each(|(dest, (x, y))| *dest = (x * x + y * y).sqrt());
+        &self.work
+    }
+
+    fn render(&mut self, data: &mut Vec<u8>, particles: &[(f64, f64)]) {
+        const U_MAX: f64 = 1.0;
+        const V_MAX: f64 = 1.0;
+        const W_MAX: f64 = 0.01;
+
+        self.calc_velo();
+        let (u, v, w) = (&self.density, &self.density2, &self.work);
+        let shape = &self.shape;
+        for y in 0..self.shape.1 {
+            for x in 0..self.shape.0 {
+                data[shape.idx(x, y) * 4    ] = ((u[shape.idx(x, y)]) / U_MAX * 127.) as u8;
+                data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / V_MAX * 127.) as u8;
+                data[shape.idx(x, y) * 4 + 2] = ((w[shape.idx(x, y)]) / W_MAX * 127.) as u8;
+                data[shape.idx(x, y) * 4 + 3] = 255;
+            }
+        }
+
+        for particle in particles {
+            let (x, y) = (particle.0 as isize, particle.1 as isize);
+            data[shape.idx(x, y) * 4    ] = 255;
+            data[shape.idx(x, y) * 4 + 1] = 255;
+            data[shape.idx(x, y) * 4 + 2] = 255;
+            data[shape.idx(x, y) * 4 + 3] = 255;
+        }
+    }
+}
 
 #[allow(non_upper_case_globals)]
 #[wasm_bindgen]
@@ -90,19 +389,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     };
     let mut particles = reset_particles();
 
-
-    #[derive(Copy, Clone)]
-    struct Params{
-        delta_time: f64,
-        skip_frames: u32,
-        mouse_pos: [i32; 2],
-        visc: f64,
-        diff: f64,
-        density: f64,
-        decay: f64,
-        velo: f64,
-    }
-
     let params = Params{
         delta_time: 1.,
         skip_frames: 1,
@@ -113,282 +399,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         decay: 0.01,
         velo: 0.75,
     };
-
-    trait Idx {
-        fn idx(&self, x: isize, y: isize) -> usize;
-    }
-
-    type Shape = (isize, isize);
-
-    impl Idx for Shape {
-        fn idx(&self, x: isize, y: isize) -> usize {
-            let (width, height) = self;
-            ((x + width) % width + (y + height) % height * width) as usize
-        }
-    }
-
-    let shape = (width as isize, height as isize);
-
-    fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, shape: Shape) {
-        density[shape.idx(x, y)] += amount;
-    }
-
-    fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
-        vx[index] += amount[0];
-        vy[index] += amount[1];
-    }
-
-    let set_bnd = |b: i32, x: &mut [f64], width: usize, height: usize| {
-        let [iwidth, iheight] = [width as isize, height as isize];
-        let ix = |x, y| {
-            ((x + width) % width + (y + height) % height * width) as usize
-        };
-        // Edge cases
-        for i in 1..width - 1 {
-            x[ix(i, 0  )] = if b == 2 { -x[ix(i, 1  )] } else { x[ix(i, 1  )] };
-            x[ix(i, height-1)] = if b == 2 { -x[ix(i, height-2)] } else { x[ix(i, height-2)] };
-        }
-        for j in 1..height - 1 {
-            x[ix(0  , j)] = if b == 1 { -x[ix(1  , j)] } else { x[ix(1  , j)] };
-            x[ix(width-1, j)] = if b == 1 { -x[ix(width-2, j)] } else { x[ix(width-2, j)] };
-        }
-
-        // Corner cases (literally)
-        // x[ix!(0, 0)]       = 0.33f * (x[ix!(1, 0)]
-        //                             + x[ix!(0, 1)]);
-        // x[ix!(0, height-1)]     = 0.33f * (x[ix!(1, height-1, 0)]
-        //                             + x[ix!(0, N-2, 0)]
-        //                             + x[ix!(0, N-1, 1)]);
-        // x[ix!(0, 0)]     = 0.33f * (x[ix!(1, 0, N-1)]
-        //                             + x[ix!(0, 1, N-1)]
-        //                             + x[ix!(0, 0, N)]);
-        // x[ix!(0, N-1, N-1)]   = 0.33f * (x[ix!(1, N-1, N-1)]
-        //                             + x[ix!(0, N-2, N-1)]
-        //                             + x[ix!(0, N-1, N-2)]);
-        // x[ix!(N-1, 0, 0)]     = 0.33f * (x[ix!(N-2, 0, 0)]
-        //                             + x[ix!(N-1, 1, 0)]
-        //                             + x[ix!(N-1, 0, 1)]);
-        // x[ix!(N-1, N-1, 0)]   = 0.33f * (x[ix!(N-2, N-1, 0)]
-        //                             + x[ix!(N-1, N-2, 0)]
-        //                             + x[ix!(N-1, N-1, 1)]);
-        // x[ix!(N-1, 0, N-1)]   = 0.33f * (x[ix!(N-2, 0, N-1)]
-        //                             + x[ix!(N-1, 1, N-1)]
-        //                             + x[ix!(N-1, 0, N-2)]);
-        // x[ix!(N-1, N-1, N-1)] = 0.33f * (x[ix!(N-2, N-1, N-1)]
-        //                             + x[ix!(N-1, N-2, N-1)]
-        //                             + x[ix!(N-1, N-1, N-2)]);
-    };
-
-    /// Solve linear system of equasions using Gauss-Seidel relaxation
-    ///
-    /// @param b ignored
-    /// @param x Target field to be solved
-    fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape) {
-        let c_recip = 1.0 / c;
-        for _ in 0..iter {
-            for j in 0..shape.1 {
-                for i in 0..shape.0 {
-                    x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
-                        + a*(x[shape.idx(i+1, j  )]
-                            +x[shape.idx(i-1, j  )]
-                            +x[shape.idx(i  , j+1)]
-                            +x[shape.idx(i  , j-1)]
-                        )) * c_recip;
-                }
-            }
-            // set_bnd(b, x, N);
-        }
-    }
-
-    fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape) {
-        let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
-        lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
-    }
-
-    fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape) {
-        let dtx = dt * (shape.0 - 2) as f64;
-        let dty = dt * (shape.1 - 2) as f64;
-
-        for j in 0..shape.1 {
-            let jfloat = j as f64;
-            for i in 0..shape.0 {
-                let ifloat = i as f64;
-                let x    = ifloat - dtx * vx[shape.idx(i, j)];
-                let y    = jfloat - dty * vy[shape.idx(i, j)];
-                
-                // if x < 0.5 { x = 0.5 }
-                // if x > fwidth + 0.5 { x = fwidth + 0.5 };
-                let i0 = x.floor();
-                let i1 = i0 + 1.0;
-                // if y < 0.5 { y = 0.5 }
-                // if y > fheight + 0.5 { y = fheight + 0.5 };
-                let j0 = y.floor();
-                let j1 = j0 + 1.0; 
-                
-                let s1 = x - i0; 
-                let s0 = 1.0 - s1; 
-                let t1 = y - j0; 
-                let t0 = 1.0 - t1;
-                
-                let i0i = i0 as isize;
-                let i1i = i1 as isize;
-                let j0i = j0 as isize;
-                let j1i = j1 as isize;
-                
-                d[shape.idx(i, j)] = 
-                    s0 * ( t0 * (d0[shape.idx(i0i, j0i)])
-                        +( t1 * (d0[shape.idx(i0i, j1i)])))
-                +s1 * ( t0 * (d0[shape.idx(i1i, j0i)])
-                        +( t1 * (d0[shape.idx(i1i, j1i)])));
-            }
-        }
-        // set_bnd(b, d, N);
-    }
-
-    fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
-        for j in 0..shape.1 {
-            for i in 0..shape.0 {
-                proc((i, j),
-                    vx[shape.idx(i+1, j  )]
-                    -vx[shape.idx(i-1, j  )]
-                    +vy[shape.idx(i  , j+1)]
-                    -vy[shape.idx(i  , j-1)])
-            }
-        }
-    }
-
-    fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
-        let mut sum = 0.;
-        let mut max = 0.;
-        divergence(vx, vy, shape, |_, div| {
-            sum += div;
-            max = div.max(max);
-        });
-        (sum, max)
-    }
-
-    fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
-        for j in 0..shape.1 {
-            for i in 0..shape.0 {
-                div[shape.idx(i, j)] = -0.5*(
-                        vx[shape.idx(i+1, j  )]
-                        -vx[shape.idx(i-1, j  )]
-                        +vy[shape.idx(i  , j+1)]
-                        -vy[shape.idx(i  , j-1)]
-                    ) / shape.0 as f64;
-                p[shape.idx(i, j)] = 0.;
-            }
-        }
-        // set_bnd(0, div, N); 
-        // set_bnd(0, p, N);
-        lin_solve(0, p, div, 1., 4., iter, shape);
-
-        for j in 0..shape.1 {
-            for i in 0..shape.0 {
-                vx[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
-                                                -p[shape.idx(i-1, j)]) * shape.0 as f64;
-                vy[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
-                                                -p[shape.idx(i, j-1)]) * shape.1 as f64;
-            }
-        }
-        // set_bnd(1, velocX, N);
-        // set_bnd(2, velocY, N);
-        // set_bnd(3, velocZ, N);
-    }
-
-    fn decay(s: &mut [f64], decay_rate: f64) {
-        for v in s {
-            *v *= decay_rate;
-        }
-    }
-
-    struct State {
-        density: Vec<f64>,
-        density2: Vec<f64>,
-        vx: Vec<f64>,
-        vy: Vec<f64>,
-        vx0: Vec<f64>,
-        vy0: Vec<f64>,
-        work: Vec<f64>,
-        work2: Vec<f64>,
-        shape: Shape,
-        params: Params,
-    }
-
-    const uMax: f64 = 1.0;
-    const vMax: f64 = 1.0;
-    const wMax: f64 = 0.01;
-
-    impl State {
-        fn fluid_step(&mut self) {
-            let visc     = self.params.visc;
-            let diff     = self.params.diff;
-            let dt       = self.params.delta_time;
-            let diffuse_iter = 4;
-            let project_iter = 20;
-            let shape = self.shape;
-
-            self.vx0.copy_from_slice(&self.vx);
-            self.vy0.copy_from_slice(&self.vy);
-
-            // console_log!("diffusion: {} viscousity: {}", diff, visc);
-
-            diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape);
-            diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape);
-
-            // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-            project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape);
-            // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-            // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-            
-            advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape);
-            advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape);
-            
-            // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-            project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape);
-            // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
-            // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-            
-            diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape);
-            advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape);
-            decay(&mut self.density, 1. - self.params.decay);
-
-            diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape);
-            advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape);
-            decay(&mut self.density2, 1. - self.params.decay);
-        }
-
-        /// Destructively calculate speed (length of velocity vector) field using State's working memory
-        fn calc_velo(&mut self) -> &Vec<f64> {
-            self.work
-                .iter_mut()
-                .zip(self.vx.iter().zip(self.vy.iter()))
-                .for_each(|(dest, (x, y))| *dest = (x * x + y * y).sqrt());
-            &self.work
-        }
-
-        fn render(&mut self, data: &mut Vec<u8>, particles: &[(f64, f64)]) {
-            self.calc_velo();
-            let (u, v, w) = (&self.density, &self.density2, &self.work);
-            let shape = &self.shape;
-            for y in 0..self.shape.1 {
-                for x in 0..self.shape.0 {
-                    data[shape.idx(x, y) * 4    ] = ((u[shape.idx(x, y)]) / uMax * 127.) as u8;
-                    data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / vMax * 127.) as u8;
-                    data[shape.idx(x, y) * 4 + 2] = ((w[shape.idx(x, y)]) / wMax * 127.) as u8;
-                    data[shape.idx(x, y) * 4 + 3] = 255;
-                }
-            }
-
-            for particle in particles {
-                let (x, y) = (particle.0 as isize, particle.1 as isize);
-                data[shape.idx(x, y) * 4    ] = 255;
-                data[shape.idx(x, y) * 4 + 1] = 255;
-                data[shape.idx(x, y) * 4 + 2] = 255;
-                data[shape.idx(x, y) * 4 + 3] = 255;
-            }
-        }
-    }
 
     let mut state = State{
         density,
