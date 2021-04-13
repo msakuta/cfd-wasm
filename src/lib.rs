@@ -136,11 +136,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         velo: 0.75,
     };
 
-    fn add_density(density: &mut [f64], x: usize, y: usize, amount: f64, width: usize, height: usize) {
-        let ix = |x, y| {
+    trait Idx {
+        fn idx(&self, x: isize, y: isize) -> usize;
+    }
+
+    impl Idx for (isize, isize) {
+        fn idx(&self, x: isize, y: isize) -> usize {
+            let (width, height) = self;
             ((x + width) % width + (y + height) % height * width) as usize
-        };
-        density[ix(x, y)] += amount;
+        }
+    }
+
+    fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, shape: (isize, isize)) {
+        density[shape.idx(x, y)] += amount;
     }
 
     fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
@@ -340,7 +348,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
     }
 
     impl State {
-
+        fn shape(&self) -> (isize, isize) {
+            (self.width as isize, self.height as isize)
+        }
 
         fn fluid_step(&mut self) {
             let visc     = self.params.visc;
@@ -431,12 +441,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         //     state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
         //     mouse_pos);
 
+        let shape = state.shape();
+
         let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
-        add_density(&mut state.density, mouse_pos[0] as usize, mouse_pos[1] as usize,
-            density_phase * state.params.density, state.width, state.height);
+        add_density(&mut state.density, mouse_pos[0] as isize, mouse_pos[1] as isize,
+            density_phase * state.params.density, shape);
         let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
-        add_density(&mut state.density2, mouse_pos[0] as usize, mouse_pos[1] as usize,
-            density2_phase * state.params.density, state.width, state.height);
+        add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
+            density2_phase * state.params.density, shape);
         // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         let mut hasher = Xor128::new((i / 16) as u32);
         let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
