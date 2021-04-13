@@ -227,21 +227,16 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
     }
 
-    fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, width: usize, height: usize) {
-        let (iwidth, iheight) = (width as isize, height as isize);
-        let ix = |x, y| {
-            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
-        };
-    
-        let dtx = dt * (width - 2) as f64;
-        let dty = dt * (height - 2) as f64;
+    fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, shape: Shape) {
+        let dtx = dt * (shape.0 - 2) as f64;
+        let dty = dt * (shape.1 - 2) as f64;
 
-        for j in 0..iheight {
+        for j in 0..shape.1 {
             let jfloat = j as f64;
-            for i in 0..iwidth {
+            for i in 0..shape.0 {
                 let ifloat = i as f64;
-                let x    = ifloat - dtx * velocX[ix(i, j)];
-                let y    = jfloat - dty * velocY[ix(i, j)];
+                let x    = ifloat - dtx * velocX[shape.idx(i, j)];
+                let y    = jfloat - dty * velocY[shape.idx(i, j)];
                 
                 // if x < 0.5 { x = 0.5 }
                 // if x > fwidth + 0.5 { x = fwidth + 0.5 };
@@ -262,36 +257,32 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 let j0i = j0 as isize;
                 let j1i = j1 as isize;
                 
-                d[ix(i, j)] = 
-                    s0 * ( t0 * (d0[ix(i0i, j0i)])
-                        +( t1 * (d0[ix(i0i, j1i)])))
-                +s1 * ( t0 * (d0[ix(i1i, j0i)])
-                        +( t1 * (d0[ix(i1i, j1i)])));
+                d[shape.idx(i, j)] = 
+                    s0 * ( t0 * (d0[shape.idx(i0i, j0i)])
+                        +( t1 * (d0[shape.idx(i0i, j1i)])))
+                +s1 * ( t0 * (d0[shape.idx(i1i, j0i)])
+                        +( t1 * (d0[shape.idx(i1i, j1i)])));
             }
         }
         // set_bnd(b, d, N);
     }
 
-    fn divergence(vx: &[f64], vy: &[f64], (width, height): (usize, usize), mut proc: impl FnMut((isize, isize), f64)) {
-        let (iwidth, iheight) = (width as isize, height as isize);
-        let ix = |x, y| {
-            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
-        };
-        for j in 0..iheight {
-            for i in 0..iwidth {
+    fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
+        for j in 0..shape.1 {
+            for i in 0..shape.0 {
                 proc((i, j),
-                    vx[ix(i+1, j  )]
-                    -vx[ix(i-1, j  )]
-                    +vy[ix(i  , j+1)]
-                    -vy[ix(i  , j-1)])
+                    vx[shape.idx(i+1, j  )]
+                    -vx[shape.idx(i-1, j  )]
+                    +vy[shape.idx(i  , j+1)]
+                    -vy[shape.idx(i  , j-1)])
             }
         }
     }
 
-    fn sum_divergence(vx: &[f64], vy: &[f64], size: (usize, usize)) -> (f64, f64) {
+    fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
         let mut sum = 0.;
         let mut max = 0.;
-        divergence(vx, vy, size, |_, div| {
+        divergence(vx, vy, shape, |_, div| {
             sum += div;
             max = div.max(max);
         });
@@ -342,23 +333,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         vy0: Vec<f64>,
         work: Vec<f64>,
         work2: Vec<f64>,
-        width: usize,
-        height: usize,
+        shape: Shape,
         params: Params,
     }
 
     impl State {
-        fn shape(&self) -> (isize, isize) {
-            (self.width as isize, self.height as isize)
-        }
-
         fn fluid_step(&mut self) {
             let visc     = self.params.visc;
             let diff     = self.params.diff;
             let dt       = self.params.delta_time;
             let diffuse_iter = 4;
             let project_iter = 20;
-            let shape = self.shape();
+            let shape = self.shape;
 
             self.vx0.copy_from_slice(&self.vx);
             self.vy0.copy_from_slice(&self.vy);
@@ -373,8 +359,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
             // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
-            advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, self.width, self.height);
-            advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, self.width, self.height);
+            advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape);
+            advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape);
             
             // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
             project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape);
@@ -382,11 +368,11 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
             diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape);
-            advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
+            advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape);
             decay(&mut self.density, 1. - self.params.decay);
 
             diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape);
-            advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
+            advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape);
             decay(&mut self.density2, 1. - self.params.decay);
         }
     }
@@ -400,8 +386,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         vy0: vec![0f64; width * height],
         work: vec![0f64; width * height],
         work2: vec![0f64; width * height],
-        width,
-        height,
+        shape: (width as isize, height as isize),
         params,
     };
 
@@ -442,14 +427,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         //     state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
         //     mouse_pos);
 
-        let shape = state.shape();
-
         let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
         add_density(&mut state.density, mouse_pos[0] as isize, mouse_pos[1] as isize,
-            density_phase * state.params.density, shape);
+            density_phase * state.params.density, state.shape);
         let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
         add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
-            density2_phase * state.params.density, shape);
+            density2_phase * state.params.density, state.shape);
         // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         let mut hasher = Xor128::new((i / 16) as u32);
         let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
