@@ -16,6 +16,7 @@ async function run() {
   var density = 50.0;
   var decay = 0.01;
   var rv = 0.75;
+  var wrapX = false;
   var wrapY = false;
   var mousePos;
 
@@ -51,6 +52,7 @@ async function run() {
   const densitySlider = sliderInit("density", "densityLabel", value => density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
+  const wrapXCheck = checkboxInit("wrapX", value => wrapX = value);
   const wrapYCheck = checkboxInit("wrapY", value => wrapY = value);
   let resetParticles = false;
 
@@ -84,6 +86,7 @@ async function run() {
                     density,
                     decay,
                     rv,
+                    wrapX,
                     wrapY,
                     resetParticles,
                 };

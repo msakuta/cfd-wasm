@@ -110,15 +110,15 @@ fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
     vy[index] += amount[1];
 }
 
-fn set_bnd(b: i32, x: &mut [f64], shape: Shape, boundary: BoundaryCondition) {
+fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
     // Edge cases
-    if boundary == BoundaryCondition::Fixed {
+    if params.boundary_y == BoundaryCondition::Fixed {
         for i in 1..shape.0 - 1 {
             x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
             x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
         }
     }
-    if false {
+    if params.boundary_x == BoundaryCondition::Fixed {
         for j in 1..shape.1 - 1 {
             x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
             x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
@@ -126,41 +126,37 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, boundary: BoundaryCondition) {
     }
 
     // Corner cases (literally)
-    // x[shape.idx(0, 0)]       = 0.33f * (x[shape.idx(1, 0)]
-    //                             + x[shape.idx(0, 1)]);
-    // x[shape.idx(0, shape.1-1)]     = 0.33f * (x[shape.idx(1, shape.1-1, 0)]
-    //                             + x[shape.idx(0, N-2, 0)]
-    //                             + x[shape.idx(0, N-1, 1)]);
-    // x[shape.idx(0, 0)]     = 0.33f * (x[shape.idx(1, 0, N-1)]
-    //                             + x[shape.idx(0, 1, N-1)]
-    //                             + x[shape.idx(0, 0, N)]);
-    // x[shape.idx(0, N-1, N-1)]   = 0.33f * (x[shape.idx(1, N-1, N-1)]
-    //                             + x[shape.idx(0, N-2, N-1)]
-    //                             + x[shape.idx(0, N-1, N-2)]);
-    // x[shape.idx(N-1, 0, 0)]     = 0.33f * (x[shape.idx(N-2, 0, 0)]
-    //                             + x[shape.idx(N-1, 1, 0)]
-    //                             + x[shape.idx(N-1, 0, 1)]);
-    // x[shape.idx(N-1, N-1, 0)]   = 0.33f * (x[shape.idx(N-2, N-1, 0)]
-    //                             + x[shape.idx(N-1, N-2, 0)]
-    //                             + x[shape.idx(N-1, N-1, 1)]);
-    // x[shape.idx(N-1, 0, N-1)]   = 0.33f * (x[shape.idx(N-2, 0, N-1)]
-    //                             + x[shape.idx(N-1, 1, N-1)]
-    //                             + x[shape.idx(N-1, 0, N-2)]);
-    // x[shape.idx(N-1, N-1, N-1)] = 0.33f * (x[shape.idx(N-2, N-1, N-1)]
-    //                             + x[shape.idx(N-1, N-2, N-1)]
-    //                             + x[shape.idx(N-1, N-1, N-2)]);
+    x[shape.idx(0, 0)]             = 0.5 * (x[shape.idx(1, 0)] + x[shape.idx(0, 1)]);
+    x[shape.idx(0, shape.1-1)]     = 0.5 * (x[shape.idx(1, shape.1-1)] + x[shape.idx(0, shape.1-2)]);
+    x[shape.idx(shape.0-1, 0)]     = 0.5 * (x[shape.idx(shape.0-2, 0)] + x[shape.idx(shape.0-1, 1)]);
+    x[shape.idx(shape.0-1, shape.1-1)] = 0.5 * (x[shape.idx(shape.0-2, shape.1-1)]
+                                                   + x[shape.idx(shape.0-1, shape.1-2)]);
+}
+
+fn get_range(shape: Shape, params: &Params) -> (isize, isize, isize, isize) {
+    let (i0, i1) = if params.boundary_x == BoundaryCondition::Fixed {
+        (1, shape.0-1)
+    } else {
+        (0, shape.0)
+    };
+    let (j0, j1) = if params.boundary_y == BoundaryCondition::Fixed {
+        (1, shape.1-1)
+    } else {
+        (0, shape.1)
+    };
+    (i0, i1, j0, j1)
 }
 
 /// Solve linear system of equasions using Gauss-Seidel relaxation
 ///
 /// @param b ignored
 /// @param x Target field to be solved
-fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape, bound_y: BoundaryCondition) {
+fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape, params: &Params) {
     let c_recip = 1.0 / c;
-    let (j0, j1) = if bound_y == BoundaryCondition::Fixed { (1, shape.1-1) } else { (0, shape.1) };
+    let (ib, ie, jb, je) = get_range(shape, params);
     for _ in 0..iter {
-        for j in j0..j1 {
-            for i in 0..shape.0 {
+        for j in jb..je {
+            for i in ib..ie {
                 x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
                     + a*(x[shape.idx(i+1, j  )]
                         +x[shape.idx(i-1, j  )]
@@ -169,34 +165,35 @@ fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, sha
                     )) * c_recip;
             }
         }
-        set_bnd(b, x, shape, bound_y);
+        set_bnd(b, x, shape, params);
     }
 }
 
-fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape, boundary: BoundaryCondition) {
+fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape, params: &Params) {
     let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
-    lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape, boundary);
+    lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape, params);
 }
 
-fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape, boundary: BoundaryCondition) {
+fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape, params: &Params) {
     let dtx = dt * (shape.0 - 2) as f64;
     let dty = dt * (shape.1 - 2) as f64;
+    let (ib, ie, jb, je) = get_range(shape, params);
 
-    for j in 0..shape.1 {
+    for j in jb..je {
         let jfloat = j as f64;
-        for i in 0..shape.0 {
+        for i in ib..ie {
             let ifloat = i as f64;
-            let x    = ifloat - dtx * vx[shape.idx(i, j)];
-            
-            
-            // if x < 0.5 { x = 0.5 }
-            // if x > fwidth + 0.5 { x = fwidth + 0.5 };
+            let mut x    = ifloat - dtx * vx[shape.idx(i, j)];
+            if params.boundary_x == BoundaryCondition::Fixed {
+                if x < 0.5 { x = 0.5 };
+                if x > shape.0 as f64 + 0.5 { x = shape.0 as f64 + 0.5 };
+            }
             let i0 = x.floor();
             let i1 = i0 + 1.0;
             let mut y = jfloat - dty * vy[shape.idx(i, j)];
-            if boundary == BoundaryCondition::Fixed {
-                if y < 0.5 { y = 0.5 }
-                if y > shape.1 as f64 + 0.5 { y = shape.1 as f64 + 0.5 }
+            if params.boundary_y == BoundaryCondition::Fixed {
+                if y < 0.5 { y = 0.5 };
+                if y > shape.1 as f64 + 0.5 { y = shape.1 as f64 + 0.5 };
             }
             let j0 = y.floor();
             let j1 = j0 + 1.0; 
@@ -218,7 +215,7 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
                     +( t1 * (d0[shape.idx(i1i, j1i)])));
         }
     }
-    set_bnd(b, d, shape, boundary);
+    set_bnd(b, d, shape, params);
 }
 
 fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
@@ -243,9 +240,10 @@ fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
     (sum, max)
 }
 
-fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, boundary: BoundaryCondition) {
-    for j in 0..shape.1 {
-        for i in 0..shape.0 {
+fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, params: &Params) {
+    let (ib, ie, jb, je) = get_range(shape, params);
+    for j in jb..je {
+        for i in ib..ie {
             div[shape.idx(i, j)] = -0.5*(
                     vx[shape.idx(i+1, j  )]
                     -vx[shape.idx(i-1, j  )]
@@ -255,21 +253,20 @@ fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter:
             p[shape.idx(i, j)] = 0.;
         }
     }
-    // set_bnd(0, div, N); 
-    // set_bnd(0, p, N);
-    lin_solve(0, p, div, 1., 4., iter, shape, boundary);
+    set_bnd(0, div, shape, params);
+    set_bnd(0, p, shape, params);
+    lin_solve(0, p, div, 1., 4., iter, shape, params);
 
-    for j in 0..shape.1 {
-        for i in 0..shape.0 {
+    for j in jb..je {
+        for i in ib..ie {
             vx[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
                                             -p[shape.idx(i-1, j)]) * shape.0 as f64;
             vy[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
                                             -p[shape.idx(i, j-1)]) * shape.1 as f64;
         }
     }
-    // set_bnd(1, velocX, N);
-    // set_bnd(2, velocY, N);
-    // set_bnd(3, velocZ, N);
+    set_bnd(1, vx, shape, params);
+    set_bnd(2, vy, shape, params);
 }
 
 fn decay(s: &mut [f64], decay_rate: f64) {
@@ -303,6 +300,7 @@ struct Params{
     decay: f64,
     velo: f64,
     boundary_y: BoundaryCondition,
+    boundary_x: BoundaryCondition,
 }
 
 struct State {
@@ -333,7 +331,8 @@ impl State {
             density: 0.5,
             decay: 0.01,
             velo: 0.75,
-            boundary_y: BoundaryCondition::Fixed,
+            boundary_x: BoundaryCondition::Wrap,
+            boundary_y: BoundaryCondition::Wrap,
         };
 
         let shape = (width as isize, height as isize);
@@ -369,28 +368,28 @@ impl State {
 
         // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape, self.params.boundary_y);
-        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape, self.params.boundary_y);
+        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape, &self.params);
+        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape, &self.params);
 
         // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape, self.params.boundary_y);
+        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape, &self.params);
         // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
 
-        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape, self.params.boundary_y);
-        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape, self.params.boundary_y);
+        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape, &self.params);
+        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape, &self.params);
 
         // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape, self.params.boundary_y);
+        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape, &self.params);
         // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
 
-        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape, self.params.boundary_y);
-        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape, self.params.boundary_y);
+        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape, &self.params);
+        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape, &self.params);
         decay(&mut self.density, 1. - self.params.decay);
 
-        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape, self.params.boundary_y);
-        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape, self.params.boundary_y);
+        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape, &self.params);
+        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape, &self.params);
         decay(&mut self.density2, 1. - self.params.decay);
     }
 
@@ -543,6 +542,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("density", &mut |value| state.params.density = value);
         assign_state("decay", &mut |value| state.params.decay = value);
         assign_state("velo", &mut |value| state.params.velo = value);
+        assign_check("wrapX", &mut |value| state.params.boundary_x = if value { Wrap } else { Fixed });
         assign_check("wrapY", &mut |value| state.params.boundary_y = if value { Wrap } else { Fixed });
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
