@@ -140,14 +140,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         fn idx(&self, x: isize, y: isize) -> usize;
     }
 
-    impl Idx for (isize, isize) {
+    type Shape = (isize, isize);
+
+    impl Idx for Shape {
         fn idx(&self, x: isize, y: isize) -> usize {
             let (width, height) = self;
             ((x + width) % width + (y + height) % height * width) as usize
         }
     }
 
-    fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, shape: (isize, isize)) {
+    let shape = (width as isize, height as isize);
+
+    fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, shape: Shape) {
         density[shape.idx(x, y)] += amount;
     }
 
@@ -197,20 +201,20 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         //                             + x[ix!(N-1, N-1, N-2)]);
     };
 
-    fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, width: usize, height: usize) {
-        let (iwidth, iheight) = (width as isize, height as isize);
-        let ix = |x, y| {
-            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
-        };
+    /// Solve linear system of equasions using Gauss-Seidel relaxation
+    ///
+    /// @param b ignored
+    /// @param x Target field to be solved
+    fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape) {
         let c_recip = 1.0 / c;
         for _ in 0..iter {
-            for j in 0..iheight {
-                for i in 0..iwidth {
-                    x[ix(i, j)] = (x0[ix(i, j)]
-                        + a*(x[ix(i+1, j  )]
-                            +x[ix(i-1, j  )]
-                            +x[ix(i  , j+1)]
-                            +x[ix(i  , j-1)]
+            for j in 0..shape.1 {
+                for i in 0..shape.0 {
+                    x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
+                        + a*(x[shape.idx(i+1, j  )]
+                            +x[shape.idx(i-1, j  )]
+                            +x[shape.idx(i  , j+1)]
+                            +x[shape.idx(i  , j-1)]
                         )) * c_recip;
                 }
             }
@@ -218,9 +222,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
     }
 
-    fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, width: usize, height: usize) {
-        let a = dt * diff * (width - 2) as f64 * (height - 2) as f64;
-        lin_solve(b, x, x0, a, 1. + 4. * a, iter, width, height);
+    fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape) {
+        let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
+        lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape);
     }
 
     fn advect(b: i32, d: &mut [f64], d0: &[f64], velocX: &[f64], velocY: &[f64], dt: f64, width: usize, height: usize) {
@@ -294,32 +298,28 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         (sum, max)
     }
 
-    fn project(velocX: &mut [f64], velocY: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, (width, height): (usize, usize)) {
-        let (iwidth, iheight) = (width as isize, height as isize);
-        let ix = |x, y| {
-            ((x + iwidth) % iwidth + (y + iheight) % iheight * iwidth) as usize
-        };
-        for j in 0..iheight {
-            for i in 0..iwidth {
-                div[ix(i, j)] = -0.5*(
-                        velocX[ix(i+1, j  )]
-                        -velocX[ix(i-1, j  )]
-                        +velocY[ix(i  , j+1)]
-                        -velocY[ix(i  , j-1)]
-                    ) / width as f64;
-                p[ix(i, j)] = 0.;
+    fn project(velocX: &mut [f64], velocY: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape) {
+        for j in 0..shape.1 {
+            for i in 0..shape.0 {
+                div[shape.idx(i, j)] = -0.5*(
+                        velocX[shape.idx(i+1, j  )]
+                        -velocX[shape.idx(i-1, j  )]
+                        +velocY[shape.idx(i  , j+1)]
+                        -velocY[shape.idx(i  , j-1)]
+                    ) / shape.0 as f64;
+                p[shape.idx(i, j)] = 0.;
             }
         }
         // set_bnd(0, div, N); 
         // set_bnd(0, p, N);
-        lin_solve(0, p, div, 1., 4., iter, width, height);
+        lin_solve(0, p, div, 1., 4., iter, shape);
 
-        for j in 0..iheight {
-            for i in 0..iwidth {
-                velocX[ix(i, j)] -= 0.5 * (  p[ix(i+1, j)]
-                                                -p[ix(i-1, j)]) * width as f64;
-                velocY[ix(i, j)] -= 0.5 * (  p[ix(i, j+1)]
-                                                -p[ix(i, j-1)]) * height as f64;
+        for j in 0..shape.1 {
+            for i in 0..shape.0 {
+                velocX[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
+                                                -p[shape.idx(i-1, j)]) * shape.0 as f64;
+                velocY[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
+                                                -p[shape.idx(i, j-1)]) * shape.1 as f64;
             }
         }
         // set_bnd(1, velocX, N);
@@ -358,17 +358,18 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let dt       = self.params.delta_time;
             let diffuse_iter = 4;
             let project_iter = 20;
+            let shape = self.shape();
 
             self.vx0.copy_from_slice(&self.vx);
             self.vy0.copy_from_slice(&self.vy);
 
             // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-            diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, self.width, self.height);
-            diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, self.width, self.height);
+            diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape);
+            diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape);
 
             // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-            project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, (self.width, self.height));
+            project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape);
             // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
             // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
@@ -376,15 +377,15 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, self.width, self.height);
             
             // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-            project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, (self.width, self.height));
+            project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape);
             // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
             // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
             
-            diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, self.width, self.height);
+            diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape);
             advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
             decay(&mut self.density, 1. - self.params.decay);
 
-            diffuse(0, &mut self.work, &self.density2, diff, dt, 1, self.width, self.height);
+            diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape);
             advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, self.width, self.height);
             decay(&mut self.density2, 1. - self.params.decay);
         }
