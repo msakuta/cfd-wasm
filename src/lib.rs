@@ -270,6 +270,14 @@ fn decay(s: &mut [f64], decay_rate: f64) {
     }
 }
 
+type Particle = (f64, f64);
+
+fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
+    (0..1000).map(|_| {
+        ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64)
+    }).collect::<Vec<_>>()
+}
+
 
 #[derive(Copy, Clone)]
 struct Params{
@@ -294,9 +302,45 @@ struct State {
     work2: Vec<f64>,
     shape: Shape,
     params: Params,
+    particles: Vec<(f64, f64)>,
+    xor128: Xor128,
 }
 
 impl State {
+    fn new(width: usize, height: usize) -> Self {
+        let mut xor128 = Xor128::new(123);
+
+        let params = Params{
+            delta_time: 1.,
+            skip_frames: 1,
+            mouse_pos: [0, 0],
+            visc: 0.01,
+            diff: 0., // Diffusion seems ok with 0, since viscousity and Gauss-Seidel blends up anyway.
+            density: 0.5,
+            decay: 0.01,
+            velo: 0.75,
+        };
+
+        let shape = (width as isize, height as isize);
+
+        let particles = new_particles(&mut xor128, shape);
+
+        Self {
+            density: vec![0f64; width * height],
+            density2: vec![0f64; width * height],
+            vx: vec![0f64; width * height],
+            vy: vec![0f64; width * height],
+            vx0: vec![0f64; width * height],
+            vy0: vec![0f64; width * height],
+            work: vec![0f64; width * height],
+            work2: vec![0f64; width * height],
+            shape,
+            params,
+            particles,
+            xor128,
+        }
+    }
+
     fn fluid_step(&mut self) {
         let visc     = self.params.visc;
         let diff     = self.params.diff;
@@ -335,6 +379,19 @@ impl State {
         decay(&mut self.density2, 1. - self.params.decay);
     }
 
+    fn particle_step(&mut self) {
+        for particle in &mut self.particles {
+            let pvx = self.vx[self.shape.idx(particle.0 as isize, particle.1 as isize)];
+            let pvy = self.vy[self.shape.idx(particle.0 as isize, particle.1 as isize)];
+            let dtx = self.params.delta_time * (self.shape.0 - 2) as f64;
+            let dty = self.params.delta_time * (self.shape.1 - 2) as f64;
+
+            let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
+            particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
+            particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
+        }
+    }
+
     /// Destructively calculate speed (length of velocity vector) field using State's working memory
     fn calc_velo(&mut self) -> &Vec<f64> {
         self.work
@@ -344,7 +401,7 @@ impl State {
         &self.work
     }
 
-    fn render(&mut self, data: &mut Vec<u8>, particles: &[(f64, f64)]) {
+    fn render(&mut self, data: &mut Vec<u8>) {
         const U_MAX: f64 = 1.0;
         const V_MAX: f64 = 1.0;
         const W_MAX: f64 = 0.01;
@@ -361,7 +418,7 @@ impl State {
             }
         }
 
-        for particle in particles {
+        for particle in &self.particles {
             let (x, y) = (particle.0 as isize, particle.1 as isize);
             data[shape.idx(x, y) * 4    ] = 255;
             data[shape.idx(x, y) * 4 + 1] = 255;
@@ -369,51 +426,24 @@ impl State {
             data[shape.idx(x, y) * 4 + 3] = 255;
         }
     }
+
+    fn reset_particles(&mut self) {
+        // Technically, this is a new allocation that we would want to avoid, but it happens only
+        // when the user presses reset button.
+        self.particles = new_particles(&mut self.xor128, self.shape);
+    }
 }
 
 #[allow(non_upper_case_globals)]
 #[wasm_bindgen]
 pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
-    let density = vec![0f64; 4 * width * height];
-    let density2 = vec![0f64; 4 * width * height];
 
     let mut data = vec![0u8; 4 * width * height];
 
-    let mut xor128 = Xor128::new(123);
+    let mut state = State::new(width, height);
 
-    let mut reset_particles = move || {
-        (0..1000).map(|_| {
-            ((xor128.nexti() as usize % width) as f64, (xor128.nexti() as usize % height) as f64)
-        }).collect::<Vec<_>>()
-    };
-    let mut particles = reset_particles();
-
-    let params = Params{
-        delta_time: 1.,
-        skip_frames: 1,
-        mouse_pos: [0, 0],
-        visc: 0.01,
-        diff: 0., // Diffusion seems ok with 0, since viscousity and Gauss-Seidel blends up anyway.
-        density: 0.5,
-        decay: 0.01,
-        velo: 0.75,
-    };
-
-    let mut state = State{
-        density,
-        density2,
-        vx: vec![0f64; width * height],
-        vy: vec![0f64; width * height],
-        vx0: vec![0f64; width * height],
-        vy0: vec![0f64; width * height],
-        work: vec![0f64; width * height],
-        work2: vec![0f64; width * height],
-        shape: (width as isize, height as isize),
-        params,
-    };
-
-    state.render(&mut data, &particles);
+    state.render(&mut data);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -428,12 +458,6 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
 
         i += 1;
-
-        let (iwidth, iheight) = (width as isize, height as isize);
-        let (fwidth, fheight) = (width as f64, height as f64);
-        let ix = |x, y| {
-            ((x as isize + iwidth) % iwidth + (y as isize + iheight) % iheight * iwidth) as usize
-        };
 
         // let velo = state.calc_velo(&state.vx, &state.vy);
         // let mut div = vec![0f64; width * height];
@@ -455,23 +479,15 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
         let mut hasher = Xor128::new((i / 16) as u32);
         let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
-        add_velo(&mut state.vx, &mut state.vy, ix(mouse_pos[0], mouse_pos[1]),
+        add_velo(&mut state.vx, &mut state.vy, state.shape.idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
             [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step();
-
-            for particle in &mut particles {
-                let pvx = state.vx[ix(particle.0 as i32, particle.1 as i32)];
-                let pvy = state.vy[ix(particle.0 as i32, particle.1 as i32)];
-                let dtx = params.delta_time * (width - 2) as f64;
-                let dty = params.delta_time * (height - 2) as f64;
-                particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
-                particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
-            }
+            state.particle_step();
         }
 
-        state.render(&mut data, &particles);
+        state.render(&mut data);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
 
@@ -511,7 +527,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         }
         if let Ok(val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("resetParticles")) {
             if let Some(true) = val.as_bool() {
-                particles = reset_particles();
+                state.reset_particles();
             }
         }
 
