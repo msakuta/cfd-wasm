@@ -19,6 +19,7 @@ module.exports = {
   plugins: [
     new WasmPackPlugin({
       crateDirectory: __dirname,
+      forceMode: "production",
     }),
 
     new HtmlWebpackPlugin({
