@@ -16,8 +16,8 @@ async function run() {
   var density = 50.0;
   var decay = 0.01;
   var rv = 0.75;
-  var wrapX = false;
-  var wrapY = false;
+  var boundaryX = "Fixed";
+  var boundaryY = "Fixed";
   var diffIter = 4;
   var projIter = 10;
   var mousePos;
@@ -47,6 +47,15 @@ async function run() {
     checkbox.addEventListener("click", update);
     return checkbox;
   }
+  function radioButtonInit(radioButtonId, writer){
+    const radioButton = document.getElementById(radioButtonId);
+    const update = (_event) => {
+      if(radioButton.checked)
+        writer(radioButton.value);
+    }
+    radioButton.addEventListener("click", update);
+    return radioButton;
+  }
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
   const fSlider = sliderInit("visc", "viscLabel", value => visc = value);
@@ -54,8 +63,12 @@ async function run() {
   const densitySlider = sliderInit("density", "densityLabel", value => density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
-  const wrapXCheck = checkboxInit("wrapX", value => wrapX = value);
-  const wrapYCheck = checkboxInit("wrapY", value => wrapY = value);
+  const wrapXCheck = radioButtonInit("wrapX", value => boundaryX = value);
+  const fixedXCheck = radioButtonInit("fixedX", value => boundaryX = value);
+  const flowXCheck = radioButtonInit("flowX", value => boundaryX = value);
+  const wrapYCheck = radioButtonInit("wrapY", value => boundaryY = value);
+  const fixedYCheck = radioButtonInit("fixedY", value => boundaryY = value);
+  const flowYCheck = radioButtonInit("flowY", value => boundaryY = value);
   const diffIterSlider = sliderInit("diffIter", "diffIterLabel", value => diffIter = value);
   const projIterSlider = sliderInit("projIter", "projIterLabel", value => projIter = value);
   let resetParticles = false;
@@ -90,8 +103,8 @@ async function run() {
                     density,
                     decay,
                     rv,
-                    wrapX,
-                    wrapY,
+                    boundaryX,
+                    boundaryY,
                     diffIter,
                     projIter,
                     resetParticles,

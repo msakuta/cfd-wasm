@@ -26,7 +26,7 @@ fn window() -> web_sys::Window {
     web_sys::window().expect("no global `window` exists")
 }
 
-fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+fn request_animation_frame(f: &Closure<dyn FnMut() -> Result<(), JsValue>>) {
     window()
         .request_animation_frame(f.as_ref().unchecked_ref())
         .expect("should register `requestAnimationFrame` OK");
@@ -117,11 +117,21 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
             x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
             x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
         }
+    } else if let BoundaryCondition::Flow(f) = params.boundary_y {
+        for i in 1..shape.0 - 1 {
+            x[shape.idx(i, 0  )] = if b == 2 { f } else { x[shape.idx(i, 1  )] };
+            x[shape.idx(i, shape.1-1)] = x[shape.idx(i, shape.1-2)];
+        }
     }
     if params.boundary_x == BoundaryCondition::Fixed {
         for j in 1..shape.1 - 1 {
             x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
             x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
+        }
+    } else if let BoundaryCondition::Flow(f) = params.boundary_x {
+        for j in 1..shape.1 - 1 {
+            x[shape.idx(0  , j)] = if b == 1 { f } else { x[shape.idx(1  , j)] };
+            x[shape.idx(shape.0-1, j)] = x[shape.idx(shape.0-2, j)];
         }
     }
 
@@ -134,15 +144,15 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
 }
 
 fn get_range(shape: Shape, params: &Params) -> (isize, isize, isize, isize) {
-    let (i0, i1) = if params.boundary_x == BoundaryCondition::Fixed {
-        (1, shape.0-1)
-    } else {
-        (0, shape.0)
+    let (i0, i1) = match params.boundary_x {
+        BoundaryCondition::Fixed => (1, shape.0-1),
+        BoundaryCondition::Wrap => (0, shape.0),
+        BoundaryCondition::Flow(_) => (1, shape.0),
     };
-    let (j0, j1) = if params.boundary_y == BoundaryCondition::Fixed {
-        (1, shape.1-1)
-    } else {
-        (0, shape.1)
+    let (j0, j1) = match params.boundary_y {
+        BoundaryCondition::Fixed => (1, shape.1-1),
+        BoundaryCondition::Wrap => (0, shape.1),
+        BoundaryCondition::Flow(_) => (1, shape.1),
     };
     (i0, i1, j0, j1)
 }
@@ -287,6 +297,7 @@ fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
 enum BoundaryCondition {
     Wrap,
     Fixed,
+    Flow(f64),
 }
 
 #[derive(Copy, Clone)]
@@ -469,7 +480,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
     console_log!("Starting frames");
 
-    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || -> Result<(), JsValue> {
         let Params{mouse_pos, ..} = state.params;
         // console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
         //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
@@ -513,7 +524,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
             .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
-            return
+            return Ok(());
         }
         let assign_state = |name: &str, setter: &mut dyn FnMut(f64)| {
             if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
@@ -545,8 +556,23 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
                 }
             }
         };
+        let assign_boundary = |name: &str, setter: &mut dyn FnMut(BoundaryCondition)| {
+            use BoundaryCondition::{Wrap, Fixed, Flow};
 
-        use BoundaryCondition::{Wrap, Fixed};
+            if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
+                if let Some(s) = new_val.as_string() {
+                    match &s as &str {
+                        "Fixed" => setter(Fixed),
+                        "Wrap" => setter(Wrap),
+                        "Flow" => setter(Flow(1e-2)),
+                        _ => return Err(JsValue::from_str("Unrecognized boundary condition type")),
+                    }
+                } else {
+                    return Err(JsValue::from_str("Unrecognized boundary condition type"));
+                }
+            }
+            Ok(())
+        };
 
         assign_state("deltaTime", &mut |value| state.params.delta_time = value);
         assign_state("skipFrames", &mut |value| state.params.skip_frames = value as u32);
@@ -557,8 +583,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("velo", &mut |value| state.params.velo = value);
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
-        assign_check("wrapX", &mut |value| state.params.boundary_x = if value { Wrap } else { Fixed });
-        assign_check("wrapY", &mut |value| state.params.boundary_y = if value { Wrap } else { Fixed });
+        assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
+        assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
             for i in 0..2 {
                 if let Ok(the_val) = js_sys::Reflect::get_u32(&new_val, i) {
@@ -577,7 +603,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         // Schedule ourself for another requestAnimationFrame callback.
         request_animation_frame(func.borrow().as_ref().unwrap());
-    }) as Box<dyn FnMut()>));
+
+        Ok(())
+    }) as Box<dyn FnMut() -> Result<(), JsValue>>));
 
     request_animation_frame(g.borrow().as_ref().unwrap());
 
