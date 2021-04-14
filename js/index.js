@@ -1,7 +1,7 @@
-import init, { turing } from './cfd_wasm.js'
+import("../pkg/index.js").catch(console.error).then(run);
 
-async function run() {
-  await init()
+async function run(module) {
+  const { turing } = module;
 
   const canvasScale = 2.;
   const canvas = document.getElementById('canvas');
@@ -126,5 +126,3 @@ async function run() {
 
   startAnimation();
 }
-
-run()
