@@ -135,6 +135,20 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
         }
     }
 
+    let center = (shape.0 / 4, shape.1 / 2);
+    let radius = shape.0 / 16;
+
+    if params.obstacle {
+        for j in center.1-radius..center.1+radius {
+            for i in center.0-radius..center.0+radius {
+                let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
+                if dist2 < radius * radius {
+                    x[shape.idx(i, j)] = 0.;
+                }
+            }
+        }
+    }
+
     // Corner cases (literally)
     x[shape.idx(0, 0)]             = 0.5 * (x[shape.idx(1, 0)] + x[shape.idx(0, 1)]);
     x[shape.idx(0, shape.1-1)]     = 0.5 * (x[shape.idx(1, shape.1-1)] + x[shape.idx(0, shape.1-2)]);
@@ -312,6 +326,7 @@ struct Params{
     velo: f64,
     diffuse_iter: usize,
     project_iter: usize,
+    obstacle: bool,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
 }
@@ -346,6 +361,7 @@ impl State {
             velo: 0.75,
             diffuse_iter: 4,
             project_iter: 20,
+            obstacle: false,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         };
@@ -583,6 +599,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("velo", &mut |value| state.params.velo = value);
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
+        assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {

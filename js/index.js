@@ -16,6 +16,7 @@ async function run(module) {
   var density = 50.0;
   var decay = 0.01;
   var rv = 0.75;
+  var obstacle = false;
   var boundaryX = "Fixed";
   var boundaryY = "Fixed";
   var diffIter = 4;
@@ -63,6 +64,7 @@ async function run(module) {
   const densitySlider = sliderInit("density", "densityLabel", value => density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
+  const obstacleCheck = checkboxInit("obstacle", value => obstacle = value);
   const wrapXCheck = radioButtonInit("wrapX", value => boundaryX = value);
   const fixedXCheck = radioButtonInit("fixedX", value => boundaryX = value);
   const flowXCheck = radioButtonInit("flowX", value => boundaryX = value);
@@ -103,6 +105,7 @@ async function run(module) {
                     density,
                     decay,
                     rv,
+                    obstacle,
                     boundaryX,
                     boundaryY,
                     diffIter,
