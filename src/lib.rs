@@ -107,6 +107,24 @@ impl Indexer {
         }
         ((x + width) % width + (y + height) % height * width) as usize
     }
+
+    fn wrap(&mut self, xor128: &mut Xor128, x: f64, y: f64) -> (f64, f64) {
+        let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
+        if let BoundaryCondition::Fixed | BoundaryCondition::Flow(_) = self.boundary_x {
+            if x < 0. || fwidth < x {
+                return ((xor128.nexti() as isize % self.shape.0) as f64,
+                    (xor128.nexti() as isize % self.shape.1) as f64)
+            }
+        }
+        if let BoundaryCondition::Fixed | BoundaryCondition::Flow(_) = self.boundary_y {
+            if y < 0. || fwidth < y {
+                return ((xor128.nexti() as isize % self.shape.0) as f64,
+                    (xor128.nexti() as isize % self.shape.1) as f64)
+            }
+        }
+        ((x + fwidth) % fwidth,
+         (y + fheight) % fheight)
+    }
 }
 
 fn add_density(density: &mut [f64], x: isize, y: isize, amount: f64, index: &Indexer) {
@@ -432,16 +450,14 @@ impl State {
     }
 
     fn particle_step(&mut self) {
-        let indexer = self.indexer();
+        let mut indexer = self.indexer();
         for particle in &mut self.particles {
             let pvx = self.vx[indexer.idx(particle.0 as isize, particle.1 as isize)];
             let pvy = self.vy[indexer.idx(particle.0 as isize, particle.1 as isize)];
             let dtx = self.params.delta_time * (indexer.shape.0 - 2) as f64;
             let dty = self.params.delta_time * (indexer.shape.1 - 2) as f64;
 
-            let (fwidth, fheight) = (indexer.shape.0 as f64, indexer.shape.1 as f64);
-            particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
-            particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
+            *particle = indexer.wrap(&mut self.xor128, particle.0 + dtx * pvx, particle.1 + dty * pvy);
         }
     }
 
