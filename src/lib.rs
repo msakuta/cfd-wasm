@@ -110,6 +110,10 @@ fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
     vy[index] += amount[1];
 }
 
+fn obstacle_position(shape: &Shape) -> (isize, isize) {
+    (shape.0 / 4, shape.1 / 2)
+}
+
 fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
     // Edge cases
     if params.boundary_y == BoundaryCondition::Fixed {
@@ -135,7 +139,7 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
         }
     }
 
-    let center = (shape.0 / 4, shape.1 / 2);
+    let center = obstacle_position(&shape);
     let radius = shape.0 / 16;
 
     if params.obstacle {
@@ -462,6 +466,23 @@ impl State {
                 data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / V_MAX * 127.) as u8;
                 data[shape.idx(x, y) * 4 + 2] = ((w[shape.idx(x, y)]) / W_MAX * 127.) as u8;
                 data[shape.idx(x, y) * 4 + 3] = 255;
+            }
+        }
+
+        let center = obstacle_position(shape);
+        let radius = shape.0 / 16;
+
+        if self.params.obstacle {
+            for j in center.1-radius..center.1+radius {
+                for i in center.0-radius..center.0+radius {
+                    let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
+                    if dist2 < radius * radius {
+                        data[shape.idx(i, j) * 4    ] = 127;
+                        data[shape.idx(i, j) * 4 + 1] = 127;
+                        data[shape.idx(i, j) * 4 + 2] = 0;
+                        data[shape.idx(i, j) * 4 + 3] = 255;
+                    }
+                }
             }
         }
 
