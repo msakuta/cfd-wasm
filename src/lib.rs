@@ -326,6 +326,7 @@ struct Params{
     velo: f64,
     diffuse_iter: usize,
     project_iter: usize,
+    mouse_flow: bool,
     obstacle: bool,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
@@ -361,6 +362,7 @@ impl State {
             velo: 0.75,
             diffuse_iter: 4,
             project_iter: 20,
+            mouse_flow: true,
             obstacle: false,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
@@ -514,17 +516,19 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         //     state.density[ix(mouse_pos[0], mouse_pos[1])], velo.iter().fold(0., |acc: f64, v| acc.max(*v)),
         //     mouse_pos);
 
-        let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
-        add_density(&mut state.density, mouse_pos[0] as isize, mouse_pos[1] as isize,
-            density_phase * state.params.density, state.shape);
-        let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
-        add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
-            density2_phase * state.params.density, state.shape);
-        // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
-        let mut hasher = Xor128::new((i / 16) as u32);
-        let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
-        add_velo(&mut state.vx, &mut state.vy, state.shape.idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
-            [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
+        if state.params.mouse_flow {
+            let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
+            add_density(&mut state.density, mouse_pos[0] as isize, mouse_pos[1] as isize,
+                density_phase * state.params.density, state.shape);
+            let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
+            add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
+                density2_phase * state.params.density, state.shape);
+            // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
+            let mut hasher = Xor128::new((i / 16) as u32);
+            let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
+            add_velo(&mut state.vx, &mut state.vy, state.shape.idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
+                [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
+        }
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step();
@@ -599,6 +603,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("velo", &mut |value| state.params.velo = value);
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
+        assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
