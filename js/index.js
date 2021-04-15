@@ -12,7 +12,7 @@ async function run(module) {
   let params = {
     deltaTime: 1.0,
     skipFrames: 1,
-    visc: 0.01,
+    visc: 1e-7,
     diff: 0.,
     density: 50.0,
     decay: 0.01,
