@@ -9,22 +9,24 @@ async function run(module) {
   canvas.style.width = canvasSize.width * canvasScale + "px";
   canvas.style.height = canvasSize.height * canvasScale + "px";
 
-  var deltaTime = 1.0;
-  var skipFrames = 1;
-  var visc = 0.01;
-  var diff = 0.;
-  var density = 50.0;
-  var decay = 0.01;
-  var rv = 0.75;
-  var mouseFlow = true;
-  var obstacle = false;
-  var dyeFromObstacle = true;
-  var boundaryX = "Fixed";
-  var boundaryY = "Fixed";
-  var diffIter = 4;
-  var projIter = 10;
-  var mousePos;
-
+  let params = {
+    deltaTime: 1.0,
+    skipFrames: 1,
+    visc: 0.01,
+    diff: 0.,
+    density: 50.0,
+    decay: 0.01,
+    mouseFlowSpeed: 0.75,
+    boundaryFlowSpeed: 0.02,
+    mouseFlow: true,
+    obstacle: false,
+    dyeFromObstacle: true,
+    boundaryX: "Fixed",
+    boundaryY: "Fixed",
+    diffIter: 4,
+    projIter: 10,
+    mousePos: undefined,
+  };
   const ctx = canvas.getContext('2d');
 
   const animateCheckbox = document.getElementById("animate");
@@ -59,24 +61,25 @@ async function run(module) {
     radioButton.addEventListener("click", update);
     return radioButton;
   }
-  const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => deltaTime = value);
-  const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => skipFrames = value);
-  const fSlider = sliderInit("visc", "viscLabel", value => visc = value);
-  const diffSlider = sliderInit("diff", "diffLabel", value => diff = value);
-  const densitySlider = sliderInit("density", "densityLabel", value => density = value);
-  const decaySlider = sliderInit("decay", "decayLabel", value => decay = value);
-  const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
-  const mouseFlowCheck = checkboxInit("mouseFlow", value => mouseFlow = value);
-  const obstacleCheck = checkboxInit("obstacle", value => obstacle = value);
-  const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => dyeFromObstacle = value);
-  const wrapXCheck = radioButtonInit("wrapX", value => boundaryX = value);
-  const fixedXCheck = radioButtonInit("fixedX", value => boundaryX = value);
-  const flowXCheck = radioButtonInit("flowX", value => boundaryX = value);
-  const wrapYCheck = radioButtonInit("wrapY", value => boundaryY = value);
-  const fixedYCheck = radioButtonInit("fixedY", value => boundaryY = value);
-  const flowYCheck = radioButtonInit("flowY", value => boundaryY = value);
-  const diffIterSlider = sliderInit("diffIter", "diffIterLabel", value => diffIter = value);
-  const projIterSlider = sliderInit("projIter", "projIterLabel", value => projIter = value);
+  const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
+  const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => params.skipFrames = value);
+  const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value);
+  const diffSlider = sliderInit("diff", "diffLabel", value => params.diff = value);
+  const densitySlider = sliderInit("density", "densityLabel", value => params.density = value);
+  const decaySlider = sliderInit("decay", "decayLabel", value => params.decay = value);
+  const mouseFlowSpeedSlider = sliderInit("mouseFlowSpeed", "mouseFlowSpeedLabel", value => params.mouseFlowSpeed = value);
+  const boundaryFlowSpeedSlider = sliderInit("boundaryFlowSpeed", "boundaryFlowSpeedLabel", value => params.boundaryFlowSpeed = value);
+  const mouseFlowCheck = checkboxInit("mouseFlow", value => params.mouseFlow = value);
+  const obstacleCheck = checkboxInit("obstacle", value => params.obstacle = value);
+  const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
+  const wrapXCheck = radioButtonInit("wrapX", value => params.boundaryX = value);
+  const fixedXCheck = radioButtonInit("fixedX", value => params.boundaryX = value);
+  const flowXCheck = radioButtonInit("flowX", value => params.boundaryX = value);
+  const wrapYCheck = radioButtonInit("wrapY", value => params.boundaryY = value);
+  const fixedYCheck = radioButtonInit("fixedY", value => params.boundaryY = value);
+  const flowYCheck = radioButtonInit("flowY", value => params.boundaryY = value);
+  const diffIterSlider = sliderInit("diffIter", "diffIterLabel", value => params.diffIter = value);
+  const projIterSlider = sliderInit("projIter", "projIterLabel", value => params.projIter = value);
   let resetParticles = false;
 
   const buttonResetParticles = document.getElementById("buttonResetParticles");
@@ -85,7 +88,7 @@ async function run(module) {
   })
 
   canvas.addEventListener("mousemove", (event) => {
-      mousePos = [event.offsetX / canvasScale, event.offsetY / canvasScale];
+      params.mousePos = [event.offsetX / canvasScale, event.offsetY / canvasScale];
   })
 
   var label = document.getElementById('label');
@@ -101,21 +104,7 @@ async function run(module) {
                 const animateCheckbox = document.getElementById("animate");
                 const ret = {
                     terminate: !animateCheckbox.checked,
-                    mousePos,
-                    deltaTime,
-                    skipFrames,
-                    visc,
-                    diff,
-                    density,
-                    decay,
-                    rv,
-                    mouseFlow,
-                    obstacle,
-                    dyeFromObstacle,
-                    boundaryX,
-                    boundaryY,
-                    diffIter,
-                    projIter,
+                    ...params,
                     resetParticles,
                 };
                 resetParticles = false;

@@ -326,7 +326,7 @@ struct Params{
     diff: f64,
     density: f64,
     decay: f64,
-    velo: f64,
+    mouse_flow_speed: f64,
     diffuse_iter: usize,
     project_iter: usize,
     mouse_flow: bool,
@@ -363,7 +363,7 @@ impl State {
             diff: 0., // Diffusion seems ok with 0, since viscousity and Gauss-Seidel blends up anyway.
             density: 0.5,
             decay: 0.01,
-            velo: 0.75,
+            mouse_flow_speed: 0.02,
             diffuse_iter: 4,
             project_iter: 20,
             mouse_flow: true,
@@ -566,7 +566,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
             let mut hasher = Xor128::new((i / 16) as u32);
             let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
             add_velo(&mut state.vx, &mut state.vy, state.shape.idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
-                [state.params.velo * angle_rad.cos(), state.params.velo * angle_rad.sin()]);
+                [state.params.mouse_flow_speed * angle_rad.cos(), state.params.mouse_flow_speed * angle_rad.sin()]);
         }
 
         for _ in 0..state.params.skip_frames {
@@ -618,12 +618,14 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         let assign_boundary = |name: &str, setter: &mut dyn FnMut(BoundaryCondition)| {
             use BoundaryCondition::{Wrap, Fixed, Flow};
 
-            if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from(name)) {
-                if let Some(s) = new_val.as_string() {
+            if let (Ok(new_val), Ok(flow)) = (
+                js_sys::Reflect::get(&callback_ret, &JsValue::from(name)),
+                js_sys::Reflect::get(&callback_ret, &JsValue::from("boundaryFlowSpeed"))) {
+                if let (Some(s), Some(flow)) = (new_val.as_string(), flow.as_f64()) {
                     match &s as &str {
                         "Fixed" => setter(Fixed),
                         "Wrap" => setter(Wrap),
-                        "Flow" => setter(Flow(1e-2)),
+                        "Flow" => setter(Flow(flow)),
                         _ => return Err(JsValue::from_str("Unrecognized boundary condition type")),
                     }
                 } else {
@@ -639,7 +641,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("diff", &mut |value| state.params.diff = value);
         assign_state("density", &mut |value| state.params.density = value);
         assign_state("decay", &mut |value| state.params.decay = value);
-        assign_state("velo", &mut |value| state.params.velo = value);
+        assign_state("mouseFlowSpeed", &mut |value| state.params.mouse_flow_speed = value);
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
