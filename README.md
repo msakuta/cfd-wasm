@@ -8,7 +8,10 @@ Try it now on your browser!
 
 https://msakuta.github.io/cfd-wasm/
 
-## Screenshots
+## Screenshots and videos
+
+![screencast](https://msakuta.github.io/images/showcase/cfd.gif)
+![screencast2](https://msakuta.github.io/images/showcase/cfd2.gif)
 
 ![screenshot](images/screenshot00.jpg)
 
