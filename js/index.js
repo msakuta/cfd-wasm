@@ -31,14 +31,32 @@ async function run(module) {
 
   const animateCheckbox = document.getElementById("animate");
   const sliderUpdater = [];
-  function sliderInit(sliderId, labelId, writer){
+  function sliderInit(sliderId, labelId, writer, logarithmic=false){
     const slider = document.getElementById(sliderId);
     const label = document.getElementById(labelId);
     label.innerHTML = slider.value;
 
     const update = (_event) => {
-        label.innerHTML = slider.value;
-        writer(parseFloat(slider.value));
+      let value;
+      if(logarithmic){
+        const minp = parseFloat(slider.getAttribute("min"));
+        const maxp = parseFloat(slider.getAttribute("max"));
+
+        // The result should be between 100 an 10000000
+        const minv = Math.log(minp);
+        const maxv = Math.log(maxp);
+
+        // calculate adjustment factor
+        const scale = (maxv-minv) / (maxp-minp);
+
+        value = Math.exp(minv + scale*(parseFloat(slider.value) - minp));
+        label.innerHTML = value.toFixed(8);
+      }
+      else{
+        value = parseFloat(slider.value);
+        label.innerHTML = value;
+      }
+      writer(parseFloat(slider.value));
     }
     slider.addEventListener("input", update);
     sliderUpdater.push(update);
@@ -63,8 +81,8 @@ async function run(module) {
   }
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => params.skipFrames = value);
-  const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value);
-  const diffSlider = sliderInit("diff", "diffLabel", value => params.diff = value);
+  const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value, true);
+  const diffSlider = sliderInit("diff", "diffLabel", value => params.diff = value, true);
   const densitySlider = sliderInit("density", "densityLabel", value => params.density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => params.decay = value);
   const mouseFlowSpeedSlider = sliderInit("mouseFlowSpeed", "mouseFlowSpeedLabel", value => params.mouseFlowSpeed = value);

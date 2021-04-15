@@ -115,6 +115,8 @@ fn obstacle_position(shape: &Shape) -> ((isize, isize), isize) {
 }
 
 fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
+    let (center, radius) = obstacle_position(&shape);
+
     // Edge cases
     if params.boundary_y == BoundaryCondition::Fixed {
         for i in 1..shape.0 - 1 {
@@ -134,12 +136,14 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
         }
     } else if let BoundaryCondition::Flow(f) = params.boundary_x {
         for j in 1..shape.1 - 1 {
-            x[shape.idx(0  , j)] = if b == 1 { f } else { x[shape.idx(1  , j)] };
+            x[shape.idx(0  , j)] = if b == 1 {
+                if j < center.1 { f * 0.9 } else { f }
+            } else {
+                x[shape.idx(1  , j)]
+            };
             x[shape.idx(shape.0-1, j)] = x[shape.idx(shape.0-2, j)];
         }
     }
-
-    let (center, radius) = obstacle_position(&shape);
 
     if params.obstacle {
         for j in center.1-radius..center.1+radius {
