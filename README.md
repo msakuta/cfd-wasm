@@ -10,8 +10,8 @@ https://msakuta.github.io/cfd-wasm/
 
 ## Screenshots and videos
 
-![screencast](https://msakuta.github.io/images/showcase/cfd.gif)
-![screencast2](https://msakuta.github.io/images/showcase/cfd2.gif)
+![screencast](https://github.com/msakuta/msakuta.github.io/blob/master/images/showcase/cfd.gif?raw=true)
+![screencast2](https://github.com/msakuta/msakuta.github.io/blob/master/images/showcase/cfd2.gif?raw=true)
 
 ![screenshot](images/screenshot00.jpg)
 
