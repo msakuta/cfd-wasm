@@ -110,8 +110,8 @@ fn add_velo(vx: &mut [f64], vy: &mut [f64], index: usize, amount: [f64; 2]) {
     vy[index] += amount[1];
 }
 
-fn obstacle_position(shape: &Shape) -> (isize, isize) {
-    (shape.0 / 4, shape.1 / 2)
+fn obstacle_position(shape: &Shape) -> ((isize, isize), isize) {
+    ((shape.0 / 4, shape.1 / 2), shape.0 / 16)
 }
 
 fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
@@ -139,8 +139,7 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
         }
     }
 
-    let center = obstacle_position(&shape);
-    let radius = shape.0 / 16;
+    let (center, radius) = obstacle_position(&shape);
 
     if params.obstacle {
         for j in center.1-radius..center.1+radius {
@@ -332,6 +331,7 @@ struct Params{
     project_iter: usize,
     mouse_flow: bool,
     obstacle: bool,
+    dye_from_obstacle: bool,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
 }
@@ -368,6 +368,7 @@ impl State {
             project_iter: 20,
             mouse_flow: true,
             obstacle: false,
+            dye_from_obstacle: true,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         };
@@ -428,6 +429,24 @@ impl State {
         diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape, &self.params);
         advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape, &self.params);
         decay(&mut self.density2, 1. - self.params.decay);
+
+        if self.params.obstacle && self.params.dye_from_obstacle {
+            let (center, radius) = obstacle_position(&shape);
+            let radius = radius + 1;
+            for j in center.1-radius..center.1+radius {
+                for i in center.0-radius..center.0+radius {
+                    let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
+                    if dist2 < radius * radius {
+                        if j < center.1 {
+                            self.density[shape.idx(i, j)] = 1.;
+                        }
+                        if center.1 < j {
+                            self.density2[shape.idx(i, j)] = 1.;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn particle_step(&mut self) {
@@ -469,8 +488,7 @@ impl State {
             }
         }
 
-        let center = obstacle_position(shape);
-        let radius = shape.0 / 16;
+        let (center, radius) = obstacle_position(shape);
 
         if self.params.obstacle {
             for j in center.1-radius..center.1+radius {
@@ -626,6 +644,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
+        assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {

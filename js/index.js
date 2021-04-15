@@ -18,6 +18,7 @@ async function run(module) {
   var rv = 0.75;
   var mouseFlow = true;
   var obstacle = false;
+  var dyeFromObstacle = true;
   var boundaryX = "Fixed";
   var boundaryY = "Fixed";
   var diffIter = 4;
@@ -67,6 +68,7 @@ async function run(module) {
   const rvSlider = sliderInit("velo", "veloLabel", value => rv = value);
   const mouseFlowCheck = checkboxInit("mouseFlow", value => mouseFlow = value);
   const obstacleCheck = checkboxInit("obstacle", value => obstacle = value);
+  const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => dyeFromObstacle = value);
   const wrapXCheck = radioButtonInit("wrapX", value => boundaryX = value);
   const fixedXCheck = radioButtonInit("fixedX", value => boundaryX = value);
   const flowXCheck = radioButtonInit("flowX", value => boundaryX = value);
@@ -109,6 +111,7 @@ async function run(module) {
                     rv,
                     mouseFlow,
                     obstacle,
+                    dyeFromObstacle,
                     boundaryX,
                     boundaryY,
                     diffIter,
