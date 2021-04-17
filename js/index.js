@@ -1,7 +1,7 @@
 import("../pkg/index.js").catch(console.error).then(run);
 
 async function run(module) {
-  const { turing } = module;
+  const { cfd } = module;
 
   const canvasScale = 2.;
   const canvas = document.getElementById('canvas');
@@ -127,7 +127,7 @@ async function run(module) {
     console.time('Rendering in Rust')
     try{
     //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
-        turing(canvasSize.width, canvasSize.height, ctx,
+        cfd(canvasSize.width, canvasSize.height, ctx,
             (average) => {
                 // ctx.putImageData(data, 0, 0);
                 label.innerHTML = average;
