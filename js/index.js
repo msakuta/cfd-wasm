@@ -19,6 +19,7 @@ async function run(module) {
     mouseFlowSpeed: 0.75,
     boundaryFlowSpeed: 0.02,
     temperature: false,
+    halfHeatSource: false,
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
     mouseFlow: true,
@@ -96,6 +97,7 @@ async function run(module) {
   const obstacleCheck = checkboxInit("obstacle", value => params.obstacle = value);
   const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
   const temperatureCheck = checkboxInit("temperature", value => params.temperature = value);
+  const halfHeatSourceCheck = checkboxInit("halfHeatSource", value => params.halfHeatSource = value);
   const heatExchangeRateSlider = sliderInit("heatExchangeRate", "heatExchangeRateLabel", value => params.heatExchangeRate = value);
   const heatBuoyancySlider = sliderInit("heatBuoyancy", "heatBuoyancyLabel", value => params.heatBuoyancy = value, true);
   const wrapXCheck = radioButtonInit("wrapX", value => params.boundaryX = value);

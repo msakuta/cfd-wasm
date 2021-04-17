@@ -334,6 +334,7 @@ struct Params{
     diffuse_iter: usize,
     project_iter: usize,
     temperature: bool,
+    half_heat_source: bool,
     heat_exchange_rate: f64,
     heat_buoyancy: f64,
     mouse_flow: bool,
@@ -376,6 +377,7 @@ impl State {
             diffuse_iter: 4,
             project_iter: 20,
             temperature: false,
+            half_heat_source: false,
             heat_exchange_rate: 0.2,
             heat_buoyancy: 0.05,
             mouse_flow: true,
@@ -449,11 +451,12 @@ impl State {
             }
 
             for i in 0..shape.0 {
-                if i < shape.0 / 2 {
+                if !self.params.half_heat_source || i < shape.0 / 2 {
                     temperature[shape.idx(i, 1)] += (0. - temperature[shape.idx(i, 1)]) * self.params.heat_exchange_rate;
                     temperature[shape.idx(i, 2)] += (0. - temperature[shape.idx(i, 2)]) * self.params.heat_exchange_rate;
                     temperature[shape.idx(i, 3)] += (0. - temperature[shape.idx(i, 3)]) * self.params.heat_exchange_rate;
-                } else {
+                }
+                if !self.params.half_heat_source || shape.0 / 2 <= i {
                     temperature[shape.idx(i, shape.1-4)] += (1. - temperature[shape.idx(i, shape.1-3)]) * self.params.heat_exchange_rate;
                     temperature[shape.idx(i, shape.1-3)] += (1. - temperature[shape.idx(i, shape.1-2)]) * self.params.heat_exchange_rate;
                     temperature[shape.idx(i, shape.1-2)] += (1. - temperature[shape.idx(i, shape.1-1)]) * self.params.heat_exchange_rate;
@@ -708,6 +711,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
         assign_check("temperature", &mut |value| state.params.temperature = value);
+        assign_check("halfHeatSource", &mut |value| state.params.half_heat_source = value);
         assign_state("heatExchangeRate", &mut |value| state.params.heat_exchange_rate = value);
         assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
