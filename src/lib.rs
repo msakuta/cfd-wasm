@@ -339,6 +339,7 @@ struct Params{
     heat_buoyancy: f64,
     mouse_flow: bool,
     show_velocity: bool,
+    show_velocity_field: bool,
     obstacle: bool,
     dye_from_obstacle: bool,
     boundary_y: BoundaryCondition,
@@ -382,6 +383,7 @@ impl State {
             heat_buoyancy: 0.05,
             mouse_flow: true,
             show_velocity: true,
+            show_velocity_field: false,
             obstacle: false,
             dye_from_obstacle: true,
             boundary_x: BoundaryCondition::Wrap,
@@ -572,6 +574,42 @@ impl State {
             data[shape.idx(x, y) * 4 + 2] = 255;
             data[shape.idx(x, y) * 4 + 3] = 255;
         }
+
+    }
+
+    fn render_velocity_field(&self, ctx: &web_sys::CanvasRenderingContext2d) {
+        if self.params.show_velocity_field {
+            const CELL_SIZE: isize = 10;
+            const CELL_SIZE_F: f64 = CELL_SIZE as f64;
+            const VELOCITY_SCALE: f64 = 1e3;
+            const MAX_VELOCITY: f64 = 1e-2;
+            let x_cells = self.shape.0 / CELL_SIZE;
+            let y_cells = self.shape.1 / CELL_SIZE;
+            ctx.set_stroke_style(&JsValue::from_str("#7f7fff"));
+            ctx.set_line_width(1.);
+            for j in 0..y_cells {
+                for i in 0..x_cells {
+                    let (x, y) = (i as f64, j as f64);
+                    let idx = self.shape.idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                    let (mut vx, mut vy) = (self.vx[idx], self.vy[idx]);
+                    let length2 = vx * vx + vy * vy;
+                    if MAX_VELOCITY * MAX_VELOCITY < length2 {
+                        let length = length2.sqrt();
+                        vx *= MAX_VELOCITY / length;
+                        vy *= MAX_VELOCITY / length;
+                    }
+                    ctx.begin_path();
+                    ctx.move_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. + vx * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2. + vy * VELOCITY_SCALE);
+                    ctx.line_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. - vx * VELOCITY_SCALE - vy * 0.2 * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2. - vy * VELOCITY_SCALE + vx * 0.2 * VELOCITY_SCALE);
+                    ctx.line_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. - vx * VELOCITY_SCALE + vy * 0.2 * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2. - vy * VELOCITY_SCALE - vx * 0.2 * VELOCITY_SCALE);
+                    ctx.close_path();
+                    ctx.stroke();
+                }
+            }
+        }
     }
 
     fn reset_particles(&mut self) {
@@ -582,7 +620,7 @@ impl State {
 }
 
 #[wasm_bindgen]
-pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result<(), JsValue> {
+pub fn turing(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut data = vec![0u8; 4 * width * height];
@@ -609,7 +647,8 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         // let mut div = vec![0f64; width * height];
         // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
-        let average = state.density.iter().fold(0., |acc, v| acc + v);
+        let average = state.vx.iter().zip(state.vy.iter())
+            .fold(0f64, |acc, v| acc.max((v.0 * v.0 + v.1 * v.1).sqrt()));
 
         // console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
         //     i, average,
@@ -643,9 +682,10 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         state.render(&mut data);
 
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
+        ctx.put_image_data(&image_data, 0., 0.)?;
+        state.render_velocity_field(&ctx);
 
-        let callback_ret = callback.call2(&window(), &JsValue::from(image_data),
-            &JsValue::from(average)).unwrap_or(JsValue::from(true));
+        let callback_ret = callback.call1(&window(), &JsValue::from(average)).unwrap_or(JsValue::from(true));
         let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
             .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
@@ -716,6 +756,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
         assign_check("showVelocity", &mut |value| state.params.show_velocity = value);
+        assign_check("showVelocityField", &mut |value| state.params.show_velocity_field = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;

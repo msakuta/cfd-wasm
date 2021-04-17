@@ -24,6 +24,7 @@ async function run(module) {
     heatBuoyancy: 0.05,
     mouseFlow: true,
     showVelocity: true,
+    showVelocityField: false,
     obstacle: false,
     dyeFromObstacle: true,
     boundaryX: "Fixed",
@@ -94,6 +95,7 @@ async function run(module) {
   const boundaryFlowSpeedSlider = sliderInit("boundaryFlowSpeed", "boundaryFlowSpeedLabel", value => params.boundaryFlowSpeed = value);
   const mouseFlowCheck = checkboxInit("mouseFlow", value => params.mouseFlow = value);
   const showVelocityCheck = checkboxInit("showVelocity", value => params.showVelocity = value);
+  const showVelocityFieldCheck = checkboxInit("showVelocityField", value => params.showVelocityField = value);
   const obstacleCheck = checkboxInit("obstacle", value => params.obstacle = value);
   const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
   const temperatureCheck = checkboxInit("temperature", value => params.temperature = value);
@@ -125,9 +127,9 @@ async function run(module) {
     console.time('Rendering in Rust')
     try{
     //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
-        turing(canvasSize.width, canvasSize.height,
-            (data, average) => {
-                ctx.putImageData(data, 0, 0);
+        turing(canvasSize.width, canvasSize.height, ctx,
+            (average) => {
+                // ctx.putImageData(data, 0, 0);
                 label.innerHTML = average;
                 const animateCheckbox = document.getElementById("animate");
                 const ret = {
