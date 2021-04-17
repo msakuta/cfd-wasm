@@ -333,6 +333,9 @@ struct Params{
     mouse_flow_speed: f64,
     diffuse_iter: usize,
     project_iter: usize,
+    temperature: bool,
+    heat_exchange_rate: f64,
+    heat_buoyancy: f64,
     mouse_flow: bool,
     obstacle: bool,
     dye_from_obstacle: bool,
@@ -343,6 +346,7 @@ struct Params{
 struct State {
     density: Vec<f64>,
     density2: Vec<f64>,
+    temperature: Option<Vec<f64>>,
     vx: Vec<f64>,
     vy: Vec<f64>,
     vx0: Vec<f64>,
@@ -370,6 +374,9 @@ impl State {
             mouse_flow_speed: 0.02,
             diffuse_iter: 4,
             project_iter: 20,
+            temperature: false,
+            heat_exchange_rate: 0.2,
+            heat_buoyancy: 0.05,
             mouse_flow: true,
             obstacle: false,
             dye_from_obstacle: true,
@@ -384,6 +391,7 @@ impl State {
         Self {
             density: vec![0f64; width * height],
             density2: vec![0f64; width * height],
+            temperature: None,
             vx: vec![0f64; width * height],
             vy: vec![0f64; width * height],
             vx0: vec![0f64; width * height],
@@ -405,6 +413,12 @@ impl State {
         let project_iter = self.params.project_iter;
         let shape = self.shape;
 
+        if self.params.temperature {
+            if self.temperature.is_none() {
+                self.temperature = Some(vec![0.5f64; (shape.0 * shape.1) as usize]);
+            }
+        }
+
         self.vx0.copy_from_slice(&self.vx);
         self.vy0.copy_from_slice(&self.vy);
 
@@ -420,6 +434,36 @@ impl State {
 
         advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape, &self.params);
         advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape, &self.params);
+
+        if let (true, Some(temperature)) = (self.params.temperature, &mut self.temperature) {
+            let buoyancy = self.params.heat_buoyancy;
+            for i in 0..shape.0 {
+                for j in 1..shape.1-1 {
+                    self.vy[shape.idx(i, j)] += buoyancy * (
+                        temperature[shape.idx(i, j + 1)] + temperature[shape.idx(i, j - 1)]
+                        +temperature[shape.idx(i + 1, j)] + temperature[shape.idx(i - 1, j)]
+                        -4. * temperature[shape.idx(i, j)]);
+                }
+            }
+
+            for i in 0..shape.0 {
+                if i < shape.0 / 2 {
+                    temperature[shape.idx(i, 1)] += (0. - temperature[shape.idx(i, 1)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, 2)] += (0. - temperature[shape.idx(i, 2)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, 3)] += (0. - temperature[shape.idx(i, 3)]) * self.params.heat_exchange_rate;
+                } else {
+                    temperature[shape.idx(i, shape.1-4)] += (1. - temperature[shape.idx(i, shape.1-3)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, shape.1-3)] += (1. - temperature[shape.idx(i, shape.1-2)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, shape.1-2)] += (1. - temperature[shape.idx(i, shape.1-1)]) * self.params.heat_exchange_rate;
+                }
+            }
+
+            let mut work = std::mem::take(&mut self.work);
+            work.copy_from_slice(temperature);
+            diffuse(0, &mut work, temperature, diff, dt, diffuse_iter, shape, &self.params);
+            advect(0, temperature, &work, &self.vx0, &self.vy0, dt, shape, &self.params);
+            self.work = work;
+        }
 
         // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
         project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape, &self.params);
@@ -481,7 +525,11 @@ impl State {
         const W_MAX: f64 = 0.01;
 
         self.calc_velo();
-        let (u, v, w) = (&self.density, &self.density2, &self.work);
+        let (u, v, w) = (if self.params.temperature {
+            self.temperature.as_ref().unwrap_or(&self.density)
+        } else {
+            &self.density
+        }, &self.density2, &self.work);
         let shape = &self.shape;
         for y in 0..self.shape.1 {
             for x in 0..self.shape.0 {
@@ -561,7 +609,12 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
 
         if state.params.mouse_flow {
             let density_phase = 0.5 * (i as f64 * 0.02352 * std::f64::consts::PI).cos() + 0.5;
-            add_density(&mut state.density, mouse_pos[0] as isize, mouse_pos[1] as isize,
+            let density = if state.params.temperature {
+                state.temperature.as_mut().unwrap_or(&mut state.density)
+            } else {
+                &mut state.density
+            };
+            add_density(density, mouse_pos[0] as isize, mouse_pos[1] as isize,
                 density_phase * state.params.density, state.shape);
             let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
             add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
@@ -648,6 +701,9 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("mouseFlowSpeed", &mut |value| state.params.mouse_flow_speed = value);
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
+        assign_check("temperature", &mut |value| state.params.temperature = value);
+        assign_state("heatExchangeRate", &mut |value| state.params.heat_exchange_rate = value);
+        assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);

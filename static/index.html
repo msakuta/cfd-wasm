@@ -74,6 +74,20 @@
       </div>
       <div>
         <label>
+          <input type="checkbox" id="temperature">
+          Temperature
+        </label>
+      </div>
+      <div>
+        Heat exchange rate=<span id="heatExchangeRateLabel"></span>
+        <input id="heatExchangeRate" type="range" max="1" min="0" step="1e-3" value="0.1">
+      </div>
+      <div>
+        Heat buoyancy=<span id="heatBuoyancyLabel"></span>
+        <input id="heatBuoyancy" type="range" max="1" min="1e-3" step="1e-3" value="0.05">
+      </div>
+      <div>
+        <label>
           <input type="checkbox" id="mouseFlow" checked>
           Mouse flow
         </label>
