@@ -22,6 +22,7 @@ async function run(module) {
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
     mouseFlow: true,
+    showVelocity: true,
     obstacle: false,
     dyeFromObstacle: true,
     boundaryX: "Fixed",
@@ -91,6 +92,7 @@ async function run(module) {
   const mouseFlowSpeedSlider = sliderInit("mouseFlowSpeed", "mouseFlowSpeedLabel", value => params.mouseFlowSpeed = value);
   const boundaryFlowSpeedSlider = sliderInit("boundaryFlowSpeed", "boundaryFlowSpeedLabel", value => params.boundaryFlowSpeed = value);
   const mouseFlowCheck = checkboxInit("mouseFlow", value => params.mouseFlow = value);
+  const showVelocityCheck = checkboxInit("showVelocity", value => params.showVelocity = value);
   const obstacleCheck = checkboxInit("obstacle", value => params.obstacle = value);
   const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
   const temperatureCheck = checkboxInit("temperature", value => params.temperature = value);

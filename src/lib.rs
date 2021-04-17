@@ -337,6 +337,7 @@ struct Params{
     heat_exchange_rate: f64,
     heat_buoyancy: f64,
     mouse_flow: bool,
+    show_velocity: bool,
     obstacle: bool,
     dye_from_obstacle: bool,
     boundary_y: BoundaryCondition,
@@ -363,7 +364,7 @@ impl State {
     fn new(width: usize, height: usize) -> Self {
         let mut xor128 = Xor128::new(123);
 
-        let params = Params{
+        let params = Params {
             delta_time: 1.,
             skip_frames: 1,
             mouse_pos: [0, 0],
@@ -378,6 +379,7 @@ impl State {
             heat_exchange_rate: 0.2,
             heat_buoyancy: 0.05,
             mouse_flow: true,
+            show_velocity: true,
             obstacle: false,
             dye_from_obstacle: true,
             boundary_x: BoundaryCondition::Wrap,
@@ -535,7 +537,11 @@ impl State {
             for x in 0..self.shape.0 {
                 data[shape.idx(x, y) * 4    ] = ((u[shape.idx(x, y)]) / U_MAX * 127.) as u8;
                 data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / V_MAX * 127.) as u8;
-                data[shape.idx(x, y) * 4 + 2] = ((w[shape.idx(x, y)]) / W_MAX * 127.) as u8;
+                data[shape.idx(x, y) * 4 + 2] = if self.params.show_velocity {
+                    ((w[shape.idx(x, y)]) / W_MAX * 127.) as u8
+                } else {
+                    0
+                };
                 data[shape.idx(x, y) * 4 + 3] = 255;
             }
         }
@@ -705,6 +711,7 @@ pub fn turing(width: usize, height: usize, callback: js_sys::Function) -> Result
         assign_state("heatExchangeRate", &mut |value| state.params.heat_exchange_rate = value);
         assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
+        assign_check("showVelocity", &mut |value| state.params.show_velocity = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
