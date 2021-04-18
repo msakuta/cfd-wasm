@@ -130,7 +130,7 @@ async function run(module) {
         cfd(canvasSize.width, canvasSize.height, ctx,
             (average) => {
                 // ctx.putImageData(data, 0, 0);
-                label.innerHTML = average;
+                // label.innerHTML = average;
                 const animateCheckbox = document.getElementById("animate");
                 const ret = {
                     terminate: !animateCheckbox.checked,
