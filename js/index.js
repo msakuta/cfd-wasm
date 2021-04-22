@@ -27,6 +27,8 @@ async function run(module) {
     showVelocityField: false,
     obstacle: false,
     dyeFromObstacle: true,
+    particlesLabel: true,
+    particleTrails: 0,
     boundaryX: "Fixed",
     boundaryY: "Fixed",
     diffIter: 4,
@@ -102,6 +104,8 @@ async function run(module) {
   const halfHeatSourceCheck = checkboxInit("halfHeatSource", value => params.halfHeatSource = value);
   const heatExchangeRateSlider = sliderInit("heatExchangeRate", "heatExchangeRateLabel", value => params.heatExchangeRate = value);
   const heatBuoyancySlider = sliderInit("heatBuoyancy", "heatBuoyancyLabel", value => params.heatBuoyancy = value, true);
+  const particlesCheck = checkboxInit("particles", value => params.particles = value);
+  const particleTrailsSlider = sliderInit("particleTrails", "particleTrailsLabel", value => params.particleTrails = value);
   const wrapXCheck = radioButtonInit("wrapX", value => params.boundaryX = value);
   const fixedXCheck = radioButtonInit("fixedX", value => params.boundaryX = value);
   const flowXCheck = radioButtonInit("flowX", value => params.boundaryX = value);

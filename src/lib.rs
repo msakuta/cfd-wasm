@@ -306,11 +306,15 @@ fn decay(s: &mut [f64], decay_rate: f64) {
     }
 }
 
-type Particle = (f64, f64);
+struct Particle {
+    position: (f64, f64),
+    history: Vec<(f64, f64)>,
+}
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
-    (0..1000).map(|_| {
-        ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64)
+    (0..1000).map(|_| Particle {
+        position: ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64),
+        history: vec![],
     }).collect::<Vec<_>>()
 }
 
@@ -342,6 +346,8 @@ struct Params{
     show_velocity_field: bool,
     obstacle: bool,
     dye_from_obstacle: bool,
+    particles: bool,
+    particle_trails: usize,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
 }
@@ -358,7 +364,7 @@ struct State {
     work2: Vec<f64>,
     shape: Shape,
     params: Params,
-    particles: Vec<(f64, f64)>,
+    particles: Vec<Particle>,
     xor128: Xor128,
 }
 
@@ -386,6 +392,8 @@ impl State {
             show_velocity_field: false,
             obstacle: false,
             dye_from_obstacle: true,
+            particles: true,
+            particle_trails: 0,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         };
@@ -506,14 +514,22 @@ impl State {
 
     fn particle_step(&mut self) {
         for particle in &mut self.particles {
-            let pvx = self.vx[self.shape.idx(particle.0 as isize, particle.1 as isize)];
-            let pvy = self.vy[self.shape.idx(particle.0 as isize, particle.1 as isize)];
+            let pvx = self.vx[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
+            let pvy = self.vy[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let dtx = self.params.delta_time * (self.shape.0 - 2) as f64;
             let dty = self.params.delta_time * (self.shape.1 - 2) as f64;
 
+            if 0 < self.params.particle_trails {
+                while self.params.particle_trails < particle.history.len() {
+                    particle.history.remove(0);
+                }
+
+                particle.history.push(particle.position);
+            }
+
             let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
-            particle.0 = (particle.0 + dtx * pvx + fwidth) % fwidth;
-            particle.1 = (particle.1 + dty * pvy + fheight) % fheight;
+            particle.position.0 = (particle.position.0 + dtx * pvx + fwidth) % fwidth;
+            particle.position.1 = (particle.position.1 + dty * pvy + fheight) % fheight;
         }
     }
 
@@ -567,14 +583,31 @@ impl State {
             }
         }
 
+        if self.params.particles {
+            self.render_particles(data);
+        }
+    }
+
+    fn render_particles(&self, data: &mut Vec<u8>) {
+        let shape = &self.shape;
         for particle in &self.particles {
-            let (x, y) = (particle.0 as isize, particle.1 as isize);
+            let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
             data[shape.idx(x, y) * 4    ] = 255;
             data[shape.idx(x, y) * 4 + 1] = 255;
             data[shape.idx(x, y) * 4 + 2] = 255;
             data[shape.idx(x, y) * 4 + 3] = 255;
+            if 0 < self.params.particle_trails {
+                for (i, position) in particle.history.iter().enumerate() {
+                    let (x, y) = (position.0 as isize, position.1 as isize);
+                    let inten = 255 * i / 10;
+                    for j in 0..3 {
+                        data[shape.idx(x, y) * 4 + j] = (inten +
+                            data[shape.idx(x, y) * 4 + j] as usize * (255 - inten) / 255) as u8;
+                    }
+                    data[shape.idx(x, y) * 4 + 3] = 255;
+                }
+            }
         }
-
     }
 
     fn render_velocity_field(&self, ctx: &web_sys::CanvasRenderingContext2d) {
@@ -759,6 +792,8 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
         assign_check("showVelocityField", &mut |value| state.params.show_velocity_field = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
         assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
+        assign_check("particles", &mut |value| state.params.particles = value);
+        assign_usize("particleTrails", &mut |value| state.params.particle_trails = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
