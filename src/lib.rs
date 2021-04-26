@@ -6,6 +6,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlBuffer, WebGlTexture};
+
+use shader_bundle::ShaderBundle;
 
 #[wasm_bindgen]
 extern "C" {
@@ -15,12 +18,16 @@ extern "C" {
 
 macro_rules! console_log {
     ($fmt:expr, $($arg1:expr),*) => {
-        log(&format!($fmt, $($arg1),+))
+        crate::log(&format!($fmt, $($arg1),+))
     };
     ($fmt:expr) => {
-        log($fmt)
+        crate::log($fmt)
     }
 }
+
+
+mod shader_bundle;
+
 
 fn window() -> web_sys::Window {
     web_sys::window().expect("no global `window` exists")
@@ -352,6 +359,13 @@ struct Params{
     boundary_x: BoundaryCondition,
 }
 
+struct Assets {
+    rect_shader: Option<ShaderBundle>,
+    trail_shader: Option<ShaderBundle>,
+    pub trail_buffer: Option<WebGlBuffer>,
+    pub rect_buffer: Option<WebGlBuffer>,
+}
+
 struct State {
     density: Vec<f64>,
     density2: Vec<f64>,
@@ -366,6 +380,7 @@ struct State {
     params: Params,
     particles: Vec<Particle>,
     xor128: Xor128,
+    assets: Assets,
 }
 
 impl State {
@@ -416,6 +431,12 @@ impl State {
             params,
             particles,
             xor128,
+            assets: Assets {
+                rect_shader: None,
+                trail_shader: None,
+                trail_buffer: None,
+                rect_buffer: None,
+            }
         }
     }
 
@@ -584,7 +605,7 @@ impl State {
         }
 
         if self.params.particles {
-            self.render_particles(data);
+            // self.render_particles(data);
         }
     }
 
@@ -650,15 +671,169 @@ impl State {
         // when the user presses reset button.
         self.particles = new_particles(&mut self.xor128, self.shape);
     }
+
+
+    pub fn start(&mut self, context: &GL) -> Result<(), JsValue> {
+        let texture = Rc::new(context.create_texture().unwrap());
+        context.bind_texture(GL::TEXTURE_2D, Some(&*texture));
+
+        let vert_shader = compile_shader(
+            &context,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec2 vertexData;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            void main() {
+                gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
+
+                texCoords = (texTransform * vec3((vertexData.xy - 1.) * 0.5, 1.)).xy;
+            }
+        "#,
+        )?;
+        let frag_shader = compile_shader(
+            &context,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+            uniform float alpha;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
+            }
+        "#,
+        )?;
+        let program = link_program(&context, &vert_shader, &frag_shader)?;
+        context.use_program(Some(&program));
+
+        let shader = ShaderBundle::new(&context, program);
+
+        context.active_texture(GL::TEXTURE0);
+
+        context.uniform1i(shader.texture_loc.as_ref(), 0);
+        context.uniform1f(shader.alpha_loc.as_ref(), 1.);
+
+        context.enable(GL::BLEND);
+        context.blend_equation(GL::FUNC_ADD);
+        context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
+
+        self.assets.rect_shader = Some(shader);
+
+        let vert_shader = compile_shader(
+            &context,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec4 vertexData;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            void main() {
+                gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
+
+                texCoords = (texTransform * vec3(vertexData.zw, 1.)).xy;
+            }
+        "#,
+        )?;
+        let frag_shader = compile_shader(
+            &context,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = texColor;
+            }
+        "#,
+        )?;
+        let program = link_program(&context, &vert_shader, &frag_shader)?;
+        context.use_program(Some(&program));
+        self.assets.trail_shader = Some(ShaderBundle::new(&context, program));
+
+        context.active_texture(GL::TEXTURE0);
+        context.uniform1i(
+            self.assets
+                .trail_shader
+                .as_ref()
+                .and_then(|s| s.texture_loc.as_ref()),
+            0,
+        );
+
+        self.assets.trail_buffer = Some(context.create_buffer().ok_or("failed to create buffer")?);
+
+        self.assets.rect_buffer = Some(context.create_buffer().ok_or("failed to create buffer")?);
+        context.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
+        let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
+        vertex_buffer_data(&context, &rect_vertices);
+
+        context.clear_color(0.0, 0.0, 0.5, 1.0);
+
+        Ok(())
+    }
+
+    pub fn draw_tex(
+        &self,
+        context: &GL,
+        // texture: &WebGlTexture,
+    ) {
+        let shader = self.assets.rect_shader.as_ref().unwrap();
+        // context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+        let transform = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
+        context.uniform_matrix4fv_with_f32_array(
+            shader.transform_loc.as_ref(),
+            false,
+            &transform,
+        );
+
+        context.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+    }
+
+    fn put_image_gl(&self, gl: &GL, data: &[u8]) -> Result<(), JsValue> {
+        let level = 0;
+        let internal_format = GL::RGBA as i32;
+        let border = 0;
+        let src_format = GL::RGBA;
+        let src_type = GL::UNSIGNED_BYTE;
+        gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+            GL::TEXTURE_2D,
+            level,
+            internal_format,
+            self.shape.0 as i32,
+            self.shape.1 as i32,
+            border,
+            src_format,
+            src_type,
+            Some(data),
+        )?;
+        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+        self.draw_tex(gl);
+
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]
-pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
+pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut data = vec![0u8; 4 * width * height];
 
     let mut state = State::new(width, height);
+
+    state.start(&ctx)?;
 
     state.render(&mut data);
 
@@ -712,13 +887,24 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
             state.particle_step();
         }
 
+        // ctx.clear();
+
         state.render(&mut data);
 
-        let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
-        ctx.put_image_data(&image_data, 0., 0.)?;
-        state.render_velocity_field(&ctx);
+        // let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
+        state.put_image_gl(&ctx, &data)?;
+        // ctx.put_image_data(&image_data, 0., 0.)?;
+        // state.render_velocity_field(&ctx);
 
-        let callback_ret = callback.call1(&window(), &JsValue::from(average)).unwrap_or(JsValue::from(true));
+        let particle_vec = state.particles.iter()
+        .fold(vec![], |mut acc, p| {
+            acc.push(p.position.0);
+            acc.push(p.position.1);
+            acc
+        });
+        let buf = js_sys::Float64Array::from(&particle_vec as &[f64]);
+
+        let callback_ret = callback.call1(&window(), &JsValue::from(buf)).unwrap_or(JsValue::from(true));
         let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
             .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
@@ -821,4 +1007,66 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
     request_animation_frame(g.borrow().as_ref().unwrap());
 
     Ok(())
+}
+
+fn compile_shader(context: &GL, shader_type: u32, source: &str) -> Result<WebGlShader, String> {
+    let shader = context
+        .create_shader(shader_type)
+        .ok_or_else(|| String::from("Unable to create shader object"))?;
+    context.shader_source(&shader, source);
+    context.compile_shader(&shader);
+
+    if context
+        .get_shader_parameter(&shader, GL::COMPILE_STATUS)
+        .as_bool()
+        .unwrap_or(false)
+    {
+        Ok(shader)
+    } else {
+        Err(context
+            .get_shader_info_log(&shader)
+            .unwrap_or_else(|| String::from("Unknown error creating shader")))
+    }
+}
+
+fn link_program(
+    context: &GL,
+    vert_shader: &WebGlShader,
+    frag_shader: &WebGlShader,
+) -> Result<WebGlProgram, String> {
+    let program = context
+        .create_program()
+        .ok_or_else(|| String::from("Unable to create shader object"))?;
+
+    context.attach_shader(&program, vert_shader);
+    context.attach_shader(&program, frag_shader);
+    context.link_program(&program);
+
+    if context
+        .get_program_parameter(&program, GL::LINK_STATUS)
+        .as_bool()
+        .unwrap_or(false)
+    {
+        Ok(program)
+    } else {
+        Err(context
+            .get_program_info_log(&program)
+            .unwrap_or_else(|| String::from("Unknown error creating program object")))
+    }
+}
+
+pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
+    // Note that `Float32Array::view` is somewhat dangerous (hence the
+    // `unsafe`!). This is creating a raw view into our module's
+    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
+    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
+    // causing the `Float32Array` to be invalid.
+    //
+    // As a result, after `Float32Array::view` we have to be very careful not to
+    // do any memory allocations before it's dropped.
+    unsafe {
+        let vert_array = js_sys::Float32Array::view(vertices);
+
+        context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
+    };
 }

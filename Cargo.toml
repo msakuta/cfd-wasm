@@ -21,6 +21,12 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 version = "0.3.4"
 features = [
     'CanvasRenderingContext2d',
+    'WebGlBuffer',
+    'WebGlRenderingContext',
+    'WebGlProgram',
+    'WebGlShader',
+    'WebGlUniformLocation',
+    'WebGlTexture',
     'Element',
     'HtmlElement',
     'HtmlCanvasElement',

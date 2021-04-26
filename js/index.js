@@ -35,7 +35,7 @@ async function run(module) {
     projIter: 10,
     mousePos: undefined,
   };
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('webgl');
 
   const animateCheckbox = document.getElementById("animate");
   const sliderUpdater = [];
@@ -132,9 +132,17 @@ async function run(module) {
     try{
     //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
         cfd(canvasSize.width, canvasSize.height, ctx,
-            (average) => {
-                // ctx.putImageData(data, 0, 0);
-                // label.innerHTML = average;
+            (particles) => {
+              ctx.lineWidth = 1.;
+              ctx.strokeStyle = "#ffffff";
+              ctx.beginPath();
+              for(let i = 0; i < particles.length / 2; i++){
+                ctx.moveTo(particles[i * 2], particles[i * 2 + 1]);
+                ctx.lineTo(particles[i * 2], particles[i * 2 + 1] + 1);
+              }
+              ctx.stroke();
+              // ctx.putImageData(data, 0, 0);
+                label.innerHTML = particles.buffer;
                 const animateCheckbox = document.getElementById("animate");
                 const ret = {
                     terminate: !animateCheckbox.checked,
