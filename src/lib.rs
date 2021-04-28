@@ -334,6 +334,66 @@ fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
     }).collect::<Vec<_>>()
 }
 
+/// Create a texture buffer, which could be filled by later texSubImage calls.
+fn gen_flow_texture(context: &GL, shape: &Shape) -> Result<WebGlTexture, JsValue> {
+    let texture = context.create_texture().unwrap();
+    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+        GL::TEXTURE_2D,
+        0,
+        GL::RGBA as i32,
+        ceil_pow2(shape.0) as i32,
+        ceil_pow2(shape.1) as i32,
+        0,
+        GL::RGBA,
+        GL::UNSIGNED_BYTE,
+        None,
+    )?;
+
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+    Ok(texture)
+}
+
+/// Procedurally create a texture with round border
+fn gen_particle_texture(context: &GL) -> Result<WebGlTexture, JsValue> {
+    let texture = context.create_texture().unwrap();
+    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+    const PARTICLE_TEXTURE_SIZE: usize = 8;
+    const PARTICLE_TEXTURE_HALF_SIZE: usize = PARTICLE_TEXTURE_SIZE / 2;
+    let mut image = [0u8; PARTICLE_TEXTURE_SIZE * PARTICLE_TEXTURE_SIZE];
+    for i in 0..PARTICLE_TEXTURE_SIZE {
+        for j in 0..PARTICLE_TEXTURE_SIZE {
+            let x = (i as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            let y = (j as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            image[i * PARTICLE_TEXTURE_SIZE + j] = ((1. - (x * x + y * y).sqrt()).max(0.) * 255.) as u8;
+        }
+    }
+
+    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+        GL::TEXTURE_2D,
+        0,
+        GL::LUMINANCE as i32,
+        PARTICLE_TEXTURE_SIZE as i32,
+        PARTICLE_TEXTURE_SIZE as i32,
+        0,
+        GL::LUMINANCE,
+        GL::UNSIGNED_BYTE,
+        Some(&image),
+    )?;
+
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+    Ok(texture)
+}
+
+
 #[derive(Copy, Clone, PartialEq)]
 enum BoundaryCondition {
     Wrap,
@@ -372,6 +432,7 @@ struct Assets {
     flow_tex: Option<WebGlTexture>,
     particle_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
+    particle_shader: Option<ShaderBundle>,
     trail_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
     pub rect_buffer: Option<WebGlBuffer>,
@@ -446,6 +507,7 @@ impl State {
                 flow_tex: None,
                 particle_tex: None,
                 rect_shader: None,
+                particle_shader: None,
                 trail_shader: None,
                 trail_buffer: None,
                 rect_buffer: None,
@@ -645,7 +707,7 @@ impl State {
     }
 
     fn render_particles_gl(&self, gl: &GL) -> Result<(), JsValue> {
-        let shader = self.assets.rect_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
         gl.use_program(Some(&shader.program));
 
         gl.active_texture(GL::TEXTURE0);
@@ -657,13 +719,17 @@ impl State {
             <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
         );
 
+        const PARTICLE_SIZE: f32 = 1.0;
+
+        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
+        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
         enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
         for particle in &self.particles {
             let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
-            let scale = Matrix4::from_nonuniform_scale(0.5 / self.shape.0 as f32, -0.5 / self.shape.1 as f32, 1.);
-            let translation = Matrix4::from_translation(Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
-            let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
-                * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+            let translation = Matrix4::from_translation(
+                Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
             gl.uniform_matrix4fv_with_f32_array(
                 shader.transform_loc.as_ref(),
                 false,
@@ -718,47 +784,10 @@ impl State {
 
 
     pub fn start(&mut self, context: &GL) -> Result<(), JsValue> {
-        let texture = context.create_texture().unwrap();
-        context.bind_texture(GL::TEXTURE_2D, Some(&texture));
 
-        context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-            GL::TEXTURE_2D,
-            0,
-            GL::RGBA as i32,
-            ceil_pow2(self.shape.0) as i32,
-            ceil_pow2(self.shape.1) as i32,
-            0,
-            GL::RGBA,
-            GL::UNSIGNED_BYTE,
-            None,
-        )?;
+        self.assets.flow_tex = Some(gen_flow_texture(context, &self.shape)?);
 
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
-
-        self.assets.flow_tex = Some(texture);
-
-        let texture = context.create_texture().unwrap();
-        context.bind_texture(GL::TEXTURE_2D, Some(&texture));
-
-        context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-            GL::TEXTURE_2D,
-            0,
-            GL::RGBA as i32,
-            1,
-            1,
-            0,
-            GL::RGBA,
-            GL::UNSIGNED_BYTE,
-            Some(&[255, 255, 255, 255]),
-        )?;
-
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
-        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
-
-        self.assets.particle_tex = Some(texture);
+        self.assets.particle_tex = Some(gen_particle_texture(context)?);
 
         let vert_shader = compile_shader(
             &context,
@@ -802,11 +831,32 @@ impl State {
         context.uniform1i(shader.texture_loc.as_ref(), 0);
         context.uniform1f(shader.alpha_loc.as_ref(), 1.);
 
-        // context.enable(GL::BLEND);
-        // context.blend_equation(GL::FUNC_ADD);
-        // context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
+        context.enable(GL::BLEND);
+        context.blend_equation(GL::FUNC_ADD);
+        context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
 
         self.assets.rect_shader = Some(shader);
+
+        let frag_shader_add = compile_shader(
+            &context,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.r);
+            }
+        "#,
+        )?;
+        let program = link_program(&context, &vert_shader, &frag_shader_add)?;
+
+        self.assets.particle_shader = Some(ShaderBundle::new(&context, program));
+
 
         let vert_shader = compile_shader(
             &context,
