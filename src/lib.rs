@@ -7,7 +7,7 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlBuffer, WebGlTexture};
-use cgmath::{Matrix3, Matrix4};
+use cgmath::{Matrix3, Matrix4, Vector3};
 
 use shader_bundle::ShaderBundle;
 
@@ -370,6 +370,7 @@ struct Params{
 
 struct Assets {
     flow_tex: Option<WebGlTexture>,
+    particle_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
     trail_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
@@ -443,6 +444,7 @@ impl State {
             xor128,
             assets: Assets {
                 flow_tex: None,
+                particle_tex: None,
                 rect_shader: None,
                 trail_shader: None,
                 trail_buffer: None,
@@ -642,6 +644,37 @@ impl State {
         }
     }
 
+    fn render_particles_gl(&self, gl: &GL) -> Result<(), JsValue> {
+        let shader = self.assets.rect_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        gl.use_program(Some(&shader.program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
+
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+        );
+
+        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+        for particle in &self.particles {
+            let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
+            let scale = Matrix4::from_nonuniform_scale(0.5 / self.shape.0 as f32, -0.5 / self.shape.1 as f32, 1.);
+            let translation = Matrix4::from_translation(Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+            let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+                * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+            gl.uniform_matrix4fv_with_f32_array(
+                shader.transform_loc.as_ref(),
+                false,
+                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+            );
+
+            gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+        }
+        Ok(())
+    }
+
     fn render_velocity_field(&self, ctx: &web_sys::CanvasRenderingContext2d) {
         if self.params.show_velocity_field {
             const CELL_SIZE: isize = 10;
@@ -700,7 +733,32 @@ impl State {
             None,
         )?;
 
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
         self.assets.flow_tex = Some(texture);
+
+        let texture = context.create_texture().unwrap();
+        context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+        context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+            GL::TEXTURE_2D,
+            0,
+            GL::RGBA as i32,
+            1,
+            1,
+            0,
+            GL::RGBA,
+            GL::UNSIGNED_BYTE,
+            Some(&[255, 255, 255, 255]),
+        )?;
+
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+        context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+        self.assets.particle_tex = Some(texture);
 
         let vert_shader = compile_shader(
             &context,
@@ -859,9 +917,6 @@ impl State {
             src_type,
             Some(data),
         )?;
-        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
-        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
-        gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
 
         console_log!("Drawing {:?}", self.shape);
 
@@ -942,6 +997,8 @@ pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> 
         state.put_image_gl(&ctx, &data)?;
         // ctx.put_image_data(&image_data, 0., 0.)?;
         // state.render_velocity_field(&ctx);
+
+        state.render_particles_gl(&ctx)?;
 
         let particle_vec = state.particles.iter()
         .fold(vec![], |mut acc, p| {

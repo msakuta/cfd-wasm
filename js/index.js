@@ -3,7 +3,7 @@ import("../pkg/index.js").catch(console.error).then(run);
 async function run(module) {
   const { cfd } = module;
 
-  const canvasScale = 2.;
+  const canvasScale = 1.;
   const canvas = document.getElementById('canvas');
   const canvasSize = canvas.getBoundingClientRect();
   canvas.style.width = canvasSize.width * canvasScale + "px";
@@ -121,17 +121,19 @@ async function run(module) {
     resetParticles = true;
   })
 
+  const pixelScale = 2.;
+
   canvas.addEventListener("mousemove", (event) => {
-      params.mousePos = [event.offsetX / canvasScale, event.offsetY / canvasScale];
+      params.mousePos = [event.offsetX / canvasScale / pixelScale, event.offsetY / canvasScale / pixelScale];
   })
 
-  var label = document.getElementById('label');
+  const label = document.getElementById('label');
 
   function startAnimation(){
     console.time('Rendering in Rust')
     try{
     //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
-        cfd(canvasSize.width, canvasSize.height, ctx,
+        cfd(canvasSize.width / pixelScale, canvasSize.height / pixelScale, ctx,
             (particles) => {
               // ctx.lineWidth = 1.;
               // ctx.strokeStyle = "#ffffff";
