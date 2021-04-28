@@ -7,6 +7,7 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlBuffer, WebGlTexture};
+use cgmath::{Matrix3, Matrix4};
 
 use shader_bundle::ShaderBundle;
 
@@ -93,6 +94,14 @@ fn fill_checker(density: &mut [f64], (width, height): (usize, usize)) {
     }
 }
 
+
+fn ceil_pow2(i: isize) -> isize {
+    let mut bit = 0;
+    while (1 << bit) < i {
+        bit += 1;
+    }
+    1 << bit
+}
 
 
 trait Idx {
@@ -360,6 +369,7 @@ struct Params{
 }
 
 struct Assets {
+    flow_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
     trail_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
@@ -432,6 +442,7 @@ impl State {
             particles,
             xor128,
             assets: Assets {
+                flow_tex: None,
                 rect_shader: None,
                 trail_shader: None,
                 trail_buffer: None,
@@ -674,8 +685,22 @@ impl State {
 
 
     pub fn start(&mut self, context: &GL) -> Result<(), JsValue> {
-        let texture = Rc::new(context.create_texture().unwrap());
-        context.bind_texture(GL::TEXTURE_2D, Some(&*texture));
+        let texture = context.create_texture().unwrap();
+        context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+        context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+            GL::TEXTURE_2D,
+            0,
+            GL::RGBA as i32,
+            ceil_pow2(self.shape.0) as i32,
+            ceil_pow2(self.shape.1) as i32,
+            0,
+            GL::RGBA,
+            GL::UNSIGNED_BYTE,
+            None,
+        )?;
+
+        self.assets.flow_tex = Some(texture);
 
         let vert_shader = compile_shader(
             &context,
@@ -688,7 +713,7 @@ impl State {
             void main() {
                 gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
 
-                texCoords = (texTransform * vec3((vertexData.xy - 1.) * 0.5, 1.)).xy;
+                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
             }
         "#,
         )?;
@@ -719,9 +744,9 @@ impl State {
         context.uniform1i(shader.texture_loc.as_ref(), 0);
         context.uniform1f(shader.alpha_loc.as_ref(), 1.);
 
-        context.enable(GL::BLEND);
-        context.blend_equation(GL::FUNC_ADD);
-        context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
+        // context.enable(GL::BLEND);
+        // context.blend_equation(GL::FUNC_ADD);
+        // context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
 
         self.assets.rect_shader = Some(shader);
 
@@ -734,7 +759,7 @@ impl State {
             uniform mat3 texTransform;
             varying vec2 texCoords;
             void main() {
-                gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
+                gl_Position = vec4(vertexData.xy, 0.0, 1.0);
 
                 texCoords = (texTransform * vec3(vertexData.zw, 1.)).xy;
             }
@@ -776,41 +801,60 @@ impl State {
         let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
         vertex_buffer_data(&context, &rect_vertices);
 
-        context.clear_color(0.0, 0.0, 0.5, 1.0);
+        context.clear_color(0.0, 0.2, 0.5, 1.0);
 
         Ok(())
     }
 
     pub fn draw_tex(
         &self,
-        context: &GL,
+        gl: &GL,
         // texture: &WebGlTexture,
-    ) {
-        let shader = self.assets.rect_shader.as_ref().unwrap();
-        // context.bind_texture(GL::TEXTURE_2D, Some(&texture));
-        let transform = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
-        context.uniform_matrix4fv_with_f32_array(
+    ) -> Result<(), JsValue> {
+        let shader = self.assets.rect_shader.as_ref()
+            .ok_or_else(|| JsValue::from_str("Failed to load rect_shader"))?;
+        gl.use_program(Some(&shader.program));
+
+        gl.uniform_matrix4fv_with_f32_array(
             shader.transform_loc.as_ref(),
             false,
-            &transform,
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&Matrix4::from_nonuniform_scale(1., -1., 1.)),
         );
 
-        context.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(
+                // &Matrix3::from_scale(1.)
+                &Matrix3::from_nonuniform_scale(
+                    self.shape.0 as f32 / ceil_pow2(self.shape.0) as f32,
+                    self.shape.1 as f32 / ceil_pow2(self.shape.1) as f32,
+                ),
+            )
+        );
+
+        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+        gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+
+        Ok(())
     }
 
     fn put_image_gl(&self, gl: &GL, data: &[u8]) -> Result<(), JsValue> {
+        gl.use_program(Some(&self.assets.rect_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?.program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.flow_tex.as_ref());
+
         let level = 0;
-        let internal_format = GL::RGBA as i32;
-        let border = 0;
         let src_format = GL::RGBA;
         let src_type = GL::UNSIGNED_BYTE;
-        gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+        gl.tex_sub_image_2d_with_i32_and_i32_and_u32_and_type_and_opt_u8_array(
             GL::TEXTURE_2D,
             level,
-            internal_format,
+            0,
+            0,
             self.shape.0 as i32,
             self.shape.1 as i32,
-            border,
             src_format,
             src_type,
             Some(data),
@@ -819,7 +863,9 @@ impl State {
         gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
         gl.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
 
-        self.draw_tex(gl);
+        console_log!("Drawing {:?}", self.shape);
+
+        self.draw_tex(gl)?;
 
         Ok(())
     }
@@ -888,6 +934,7 @@ pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> 
         }
 
         // ctx.clear();
+        ctx.clear(GL::COLOR_BUFFER_BIT);
 
         state.render(&mut data);
 
@@ -1069,4 +1116,10 @@ pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
 
         context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
     };
+}
+
+pub fn enable_buffer(gl: &GL, buffer: &Option<WebGlBuffer>, elements: i32, vertex_position: u32) {
+    gl.bind_buffer(GL::ARRAY_BUFFER, buffer.as_ref());
+    gl.vertex_attrib_pointer_with_i32(vertex_position, elements, GL::FLOAT, false, 0, 0);
+    gl.enable_vertex_attrib_array(vertex_position);
 }

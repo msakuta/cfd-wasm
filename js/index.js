@@ -133,14 +133,14 @@ async function run(module) {
     //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
         cfd(canvasSize.width, canvasSize.height, ctx,
             (particles) => {
-              ctx.lineWidth = 1.;
-              ctx.strokeStyle = "#ffffff";
-              ctx.beginPath();
-              for(let i = 0; i < particles.length / 2; i++){
-                ctx.moveTo(particles[i * 2], particles[i * 2 + 1]);
-                ctx.lineTo(particles[i * 2], particles[i * 2 + 1] + 1);
-              }
-              ctx.stroke();
+              // ctx.lineWidth = 1.;
+              // ctx.strokeStyle = "#ffffff";
+              // ctx.beginPath();
+              // for(let i = 0; i < particles.length / 2; i++){
+              //   ctx.moveTo(particles[i * 2], particles[i * 2 + 1]);
+              //   ctx.lineTo(particles[i * 2], particles[i * 2 + 1] + 1);
+              // }
+              // ctx.stroke();
               // ctx.putImageData(data, 0, 0);
                 label.innerHTML = particles.buffer;
                 const animateCheckbox = document.getElementById("animate");
