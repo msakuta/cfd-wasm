@@ -719,7 +719,7 @@ impl State {
             <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
         );
 
-        const PARTICLE_SIZE: f32 = 1.0;
+        const PARTICLE_SIZE: f32 = 0.5;
 
         let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
         let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
@@ -800,14 +800,14 @@ impl State {
     }
 
 
-    pub fn start(&mut self, context: &GL) -> Result<(), JsValue> {
+    pub fn start(&mut self, gl: &GL) -> Result<(), JsValue> {
 
-        self.assets.flow_tex = Some(gen_flow_texture(context, &self.shape)?);
+        self.assets.flow_tex = Some(gen_flow_texture(gl, &self.shape)?);
 
-        self.assets.particle_tex = Some(gen_particle_texture(context)?);
+        self.assets.particle_tex = Some(gen_particle_texture(gl)?);
 
         let vert_shader = compile_shader(
-            &context,
+            &gl,
             GL::VERTEX_SHADER,
             r#"
             attribute vec2 vertexData;
@@ -822,7 +822,7 @@ impl State {
         "#,
         )?;
         let frag_shader = compile_shader(
-            &context,
+            &gl,
             GL::FRAGMENT_SHADER,
             r#"
             precision mediump float;
@@ -838,24 +838,24 @@ impl State {
             }
         "#,
         )?;
-        let program = link_program(&context, &vert_shader, &frag_shader)?;
-        context.use_program(Some(&program));
+        let program = link_program(&gl, &vert_shader, &frag_shader)?;
+        gl.use_program(Some(&program));
 
-        let shader = ShaderBundle::new(&context, program);
+        let shader = ShaderBundle::new(&gl, program);
 
-        context.active_texture(GL::TEXTURE0);
+        gl.active_texture(GL::TEXTURE0);
 
-        context.uniform1i(shader.texture_loc.as_ref(), 0);
-        context.uniform1f(shader.alpha_loc.as_ref(), 1.);
+        gl.uniform1i(shader.texture_loc.as_ref(), 0);
+        gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
 
-        context.enable(GL::BLEND);
-        context.blend_equation(GL::FUNC_ADD);
-        context.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
+        gl.enable(GL::BLEND);
+        gl.blend_equation(GL::FUNC_ADD);
+        gl.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
 
         self.assets.rect_shader = Some(shader);
 
         let frag_shader_add = compile_shader(
-            &context,
+            &gl,
             GL::FRAGMENT_SHADER,
             r#"
             precision mediump float;
@@ -871,14 +871,14 @@ impl State {
             }
         "#,
         )?;
-        let program = link_program(&context, &vert_shader, &frag_shader_add)?;
-        let shader = ShaderBundle::new(&context, program);
-        context.uniform1f(shader.alpha_loc.as_ref(), 1.);
+        let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
+        let shader = ShaderBundle::new(&gl, program);
+        gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
         self.assets.particle_shader = Some(shader);
 
 
         let vert_shader = compile_shader(
-            &context,
+            &gl,
             GL::VERTEX_SHADER,
             r#"
             attribute vec4 vertexData;
@@ -893,7 +893,7 @@ impl State {
         "#,
         )?;
         let frag_shader = compile_shader(
-            &context,
+            &gl,
             GL::FRAGMENT_SHADER,
             r#"
             precision mediump float;
@@ -908,12 +908,12 @@ impl State {
             }
         "#,
         )?;
-        let program = link_program(&context, &vert_shader, &frag_shader)?;
-        context.use_program(Some(&program));
-        self.assets.trail_shader = Some(ShaderBundle::new(&context, program));
+        let program = link_program(&gl, &vert_shader, &frag_shader)?;
+        gl.use_program(Some(&program));
+        self.assets.trail_shader = Some(ShaderBundle::new(&gl, program));
 
-        context.active_texture(GL::TEXTURE0);
-        context.uniform1i(
+        gl.active_texture(GL::TEXTURE0);
+        gl.uniform1i(
             self.assets
                 .trail_shader
                 .as_ref()
@@ -921,14 +921,14 @@ impl State {
             0,
         );
 
-        self.assets.trail_buffer = Some(context.create_buffer().ok_or("failed to create buffer")?);
+        self.assets.trail_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
 
-        self.assets.rect_buffer = Some(context.create_buffer().ok_or("failed to create buffer")?);
-        context.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
+        self.assets.rect_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
         let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
-        vertex_buffer_data(&context, &rect_vertices);
+        vertex_buffer_data(&gl, &rect_vertices);
 
-        context.clear_color(0.0, 0.2, 0.5, 1.0);
+        gl.clear_color(0.0, 0.2, 0.5, 1.0);
 
         Ok(())
     }
