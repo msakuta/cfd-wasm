@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, WebGlBuffer, WebGlProgram,
     WebGlRenderingContext as GL, WebGlShader, WebGlTexture};
-use cgmath::{Matrix3, Matrix4, Vector3};
+use cgmath::{Matrix3, Matrix4, Vector3, Rad};
 
 use shader_bundle::ShaderBundle;
 
@@ -434,9 +434,11 @@ struct Assets {
     particle_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
     particle_shader: Option<ShaderBundle>,
+    arrow_shader: Option<ShaderBundle>,
     trail_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
     pub rect_buffer: Option<WebGlBuffer>,
+    arrow_buffer: Option<WebGlBuffer>,
 }
 
 struct State {
@@ -509,9 +511,11 @@ impl State {
                 particle_tex: None,
                 rect_shader: None,
                 particle_shader: None,
+                arrow_shader: None,
                 trail_shader: None,
                 trail_buffer: None,
                 rect_buffer: None,
+                arrow_buffer: None,
             }
         }
     }
@@ -790,6 +794,63 @@ impl State {
         }
     }
 
+    fn render_velocity_field_gl(&self, gl: &GL) -> Result<(), JsValue> {
+        if self.params.show_velocity_field {
+            const CELL_SIZE: isize = 10;
+            const CELL_SIZE_F: f64 = CELL_SIZE as f64;
+            const VELOCITY_SCALE: f64 = 1e3;
+            const MAX_VELOCITY: f64 = 1e-2;
+            let x_cells = self.shape.0 / CELL_SIZE;
+            let y_cells = self.shape.1 / CELL_SIZE;
+
+            let shader = self.assets.arrow_shader.as_ref().ok_or_else(
+                || JsValue::from_str("Could not find rect_shader"))?;
+            gl.use_program(Some(&shader.program));
+
+            gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+
+            let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+                * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
+            enable_buffer(gl, &self.assets.arrow_buffer, 2, shader.vertex_position);
+            for j in 0..y_cells {
+                for i in 0..x_cells {
+                    let (x, y) = (i as f64, j as f64);
+                    let idx = self.shape.idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                    let (vx, vy) = (self.vx[idx], self.vy[idx]);
+                    let length2 = vx * vx + vy * vy;
+                    let length = VELOCITY_SCALE * if MAX_VELOCITY * MAX_VELOCITY < length2 {
+                        MAX_VELOCITY
+                    } else {
+                        length2.sqrt()
+                    };
+
+                    let scale = Matrix4::from_nonuniform_scale(
+                        length as f32 / self.shape.0 as f32,
+                        -length as f32 / self.shape.1 as f32,
+                        1.
+                    );
+
+                    let rotation = Matrix4::from_angle_z(Rad(-vy.atan2(vx) as f32));
+
+                    let translation = Matrix4::from_translation(
+                        Vector3::new(
+                            (x * CELL_SIZE_F) as f32 / self.shape.0 as f32,
+                            (y * CELL_SIZE_F) as f32 / self.shape.1 as f32, 0.));
+
+                    gl.uniform_matrix4fv_with_f32_array(
+                        shader.transform_loc.as_ref(),
+                        false,
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale * rotation)),
+                    );
+
+                    gl.draw_arrays(GL::TRIANGLE_FAN, 0, 3);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn reset_particles(&mut self) {
         // Technically, this is a new allocation that we would want to avoid, but it happens only
         // when the user presses reset button.
@@ -873,6 +934,24 @@ impl State {
         gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
         self.assets.particle_shader = Some(shader);
 
+        let frag_shader_flat = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            uniform float alpha;
+
+            void main() {
+                gl_FragColor = vec4(0.5, 0.5, 1., alpha);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_flat)?;
+        let shader = ShaderBundle::new(&gl, program);
+        gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+        self.assets.arrow_shader = Some(shader);
+
 
         let vert_shader = compile_shader(
             &gl,
@@ -924,6 +1003,11 @@ impl State {
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
         let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
         vertex_buffer_data(&gl, &rect_vertices);
+
+        self.assets.arrow_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.arrow_buffer.as_ref());
+        let arrow_vertices: [f32; 6] = [1., 0., -1., -0.2, -1., 0.2];
+        vertex_buffer_data(&gl, &arrow_vertices);
 
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
 
@@ -1030,6 +1114,7 @@ impl Renderer for WebGLRenderer {
     fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
         self.gl.clear(GL::COLOR_BUFFER_BIT);
         state.put_image_gl(&self.gl, &data)?;
+        state.render_velocity_field_gl(&self.gl)?;
         Ok(())
     }
 }
