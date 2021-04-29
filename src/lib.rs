@@ -727,7 +727,7 @@ impl State {
 
         enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
         for particle in &self.particles {
-            let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
+            let (x, y) = (particle.position.0, particle.position.1);
             let translation = Matrix4::from_translation(
                 Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
             gl.uniform_matrix4fv_with_f32_array(
@@ -948,7 +948,8 @@ impl State {
     }
 
     fn put_image_gl(&self, gl: &GL, data: &[u8]) -> Result<(), JsValue> {
-        gl.use_program(Some(&self.assets.rect_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?.program));
+        gl.use_program(Some(&self.assets.rect_shader.as_ref().ok_or_else(
+            || JsValue::from_str("Could not find rect_shader"))?.program));
 
         gl.active_texture(GL::TEXTURE0);
         gl.bind_texture(GL::TEXTURE_2D, self.assets.flow_tex.as_ref());
@@ -971,6 +972,10 @@ impl State {
         console_log!("Drawing {:?}", self.shape);
 
         self.draw_tex(gl)?;
+
+        if self.params.particles {
+            self.render_particles_gl(gl)?;
+        }
 
         Ok(())
     }
@@ -1047,8 +1052,6 @@ pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> 
         state.put_image_gl(&ctx, &data)?;
         // ctx.put_image_data(&image_data, 0., 0.)?;
         // state.render_velocity_field(&ctx);
-
-        state.render_particles_gl(&ctx)?;
 
         let particle_vec = state.particles.iter()
         .fold(vec![], |mut acc, p| {
