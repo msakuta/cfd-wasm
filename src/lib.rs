@@ -6,7 +6,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlBuffer, WebGlTexture};
+use web_sys::{CanvasRenderingContext2d, WebGlBuffer, WebGlProgram,
+    WebGlRenderingContext as GL, WebGlShader, WebGlTexture};
 use cgmath::{Matrix3, Matrix4, Vector3};
 
 use shader_bundle::ShaderBundle;
@@ -638,7 +639,7 @@ impl State {
         &self.work
     }
 
-    fn render(&mut self, data: &mut Vec<u8>) {
+    fn render_fluid(&mut self, data: &mut Vec<u8>) {
         const U_MAX: f64 = 1.0;
         const V_MAX: f64 = 1.0;
         const W_MAX: f64 = 0.01;
@@ -678,13 +679,9 @@ impl State {
                 }
             }
         }
-
-        if self.params.particles {
-            // self.render_particles(data);
-        }
     }
 
-    fn render_particles(&self, data: &mut Vec<u8>) {
+    fn render_particles(&self, data: &mut [u8]) {
         let shape = &self.shape;
         for particle in &self.particles {
             let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
@@ -988,8 +985,6 @@ impl State {
             Some(data),
         )?;
 
-        console_log!("Drawing {:?}", self.shape);
-
         self.draw_tex(gl)?;
 
         if self.params.particles {
@@ -1000,17 +995,65 @@ impl State {
     }
 }
 
+trait Renderer {
+    fn start(&self, _state: &mut State) -> Result<(), JsValue> {
+        Ok(())
+    }
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue>;
+}
+
+struct CanvasRenderer {
+    ctx: CanvasRenderingContext2d,
+}
+
+impl Renderer for CanvasRenderer {
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
+        let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+            wasm_bindgen::Clamped(data), state.shape.0 as u32, state.shape.1 as u32).unwrap();
+        if state.params.particles {
+            state.render_particles(data);
+        }
+        self.ctx.put_image_data(&image_data, 0., 0.)?;
+        state.render_velocity_field(&self.ctx);
+        Ok(())
+    }
+}
+
+struct WebGLRenderer {
+    gl: GL,
+}
+
+impl Renderer for WebGLRenderer {
+    fn start(&self, state: &mut State) -> Result<(), JsValue> {
+        state.start(&self.gl)
+    }
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
+        self.gl.clear(GL::COLOR_BUFFER_BIT);
+        state.put_image_gl(&self.gl, &data)?;
+        Ok(())
+    }
+}
+
 #[wasm_bindgen]
-pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> Result<(), JsValue> {
+pub fn cfd_canvas(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
+    cfd_temp(width, height, CanvasRenderer{ ctx }, callback)
+}
+
+#[wasm_bindgen]
+pub fn cfd_webgl(width: usize, height: usize, gl: GL, callback: js_sys::Function) -> Result<(), JsValue> {
+    cfd_temp(width, height, WebGLRenderer{ gl }, callback)
+}
+
+fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut data = vec![0u8; 4 * width * height];
 
     let mut state = State::new(width, height);
 
-    state.start(&ctx)?;
+    renderer.start(&mut state)?;
 
-    state.render(&mut data);
+    state.render_fluid(&mut data);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -1062,15 +1105,9 @@ pub fn cfd(width: usize, height: usize, ctx: GL, callback: js_sys::Function) -> 
             state.particle_step();
         }
 
-        // ctx.clear();
-        ctx.clear(GL::COLOR_BUFFER_BIT);
+        state.render_fluid(&mut data);
 
-        state.render(&mut data);
-
-        // let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
-        state.put_image_gl(&ctx, &data)?;
-        // ctx.put_image_data(&image_data, 0., 0.)?;
-        // state.render_velocity_field(&ctx);
+        renderer.render(&state, &mut data)?;
 
         let particle_vec = state.particles.iter()
         .fold(vec![], |mut acc, p| {
