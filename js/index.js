@@ -121,7 +121,7 @@ async function run(module) {
     resetParticles = true;
   })
 
-  const pixelScale = 2.;
+  const pixelScale = 4.;
 
   canvas.addEventListener("mousemove", (event) => {
       params.mousePos = [event.offsetX / canvasScale / pixelScale, event.offsetY / canvasScale / pixelScale];

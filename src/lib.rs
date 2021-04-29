@@ -735,8 +735,25 @@ impl State {
                 false,
                 <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
             );
+            gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
 
             gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+
+            if 0 < self.params.particle_trails {
+                for (i, position) in particle.history.iter().enumerate() {
+                    let (x, y) = (position.0, position.1);
+                    let inten = i as f32 / self.params.particle_trails as f32;
+                    let translation = Matrix4::from_translation(
+                        Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+                    gl.uniform_matrix4fv_with_f32_array(
+                        shader.transform_loc.as_ref(),
+                        false,
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+                    );
+                    gl.uniform1f(shader.alpha_loc.as_ref(), inten);
+                    gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+                }
+            }
         }
         Ok(())
     }
@@ -846,16 +863,18 @@ impl State {
             varying vec2 texCoords;
 
             uniform sampler2D texture;
+            uniform float alpha;
 
             void main() {
                 vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = vec4(texColor.rgb, texColor.r);
+                gl_FragColor = vec4(texColor.rgb, texColor.r * alpha);
             }
         "#,
         )?;
         let program = link_program(&context, &vert_shader, &frag_shader_add)?;
-
-        self.assets.particle_shader = Some(ShaderBundle::new(&context, program));
+        let shader = ShaderBundle::new(&context, program);
+        context.uniform1f(shader.alpha_loc.as_ref(), 1.);
+        self.assets.particle_shader = Some(shader);
 
 
         let vert_shader = compile_shader(
