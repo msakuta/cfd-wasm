@@ -344,12 +344,16 @@ fn decay(s: &mut [f64], decay_rate: f64) {
 struct Particle {
     position: (f64, f64),
     history: Vec<(f64, f64)>,
+    /// History buffer is formatted in a way that is easy to memcpy into cached buffer.
+    /// In particular, 2D vector is flattened into 1D vector.
+    history_buf: Vec<f32>,
 }
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
     (0..1000).map(|_| Particle {
         position: ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64),
         history: vec![],
+        history_buf: vec![],
     }).collect::<Vec<_>>()
 }
 
@@ -644,7 +648,7 @@ impl State {
         }
     }
 
-    fn particle_step(&mut self) {
+    fn particle_step(&mut self, use_webgl: bool) {
 
         let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 2;
         if self.particle_buf.len() < desired_len {
@@ -659,27 +663,35 @@ impl State {
             let dty = self.params.delta_time * (self.shape.1 - 2) as f64;
 
             if 0 < self.params.particle_trails {
-                while self.params.particle_trails < particle.history.len() {
-                    particle.history.remove(0);
-                }
+                if use_webgl && self.assets.instanced_arrays_ext.is_some() {
+                    while self.params.particle_trails <= particle.history_buf.len() / 2 {
+                        particle.history_buf.remove(0);
+                        particle.history_buf.remove(0);
+                    }
 
-                particle.history.push(particle.position);
+                    particle.history_buf.extend_from_slice(&[
+                        particle.position.0 as f32 / self.shape.0 as f32,
+                        particle.position.1 as f32 / self.shape.1 as f32,
+                    ]);
+                } else {
+                    while self.params.particle_trails <= particle.history.len() {
+                        particle.history.remove(0);
+                    }
+
+                    particle.history.push(particle.position);
+                }
             }
 
-            if self.assets.instanced_arrays_ext.is_some() {
+            if use_webgl && self.assets.instanced_arrays_ext.is_some() {
                 let (x, y) = (particle.position.0, particle.position.1);
                 self.particle_buf[idx * 2    ] = x as f32 / self.shape.0 as f32;
                 self.particle_buf[idx * 2 + 1] = y as f32 / self.shape.1 as f32;
                 idx += 1;
 
-                for (t, (x, y)) in particle.history.iter().enumerate() {
-                    if self.params.particle_trails <= t {
-                        break;
-                    }
-                    self.particle_buf[idx * 2    ] = *x as f32 / self.shape.0 as f32;
-                    self.particle_buf[idx * 2 + 1] = *y as f32 / self.shape.1 as f32;
-                    idx += 1;
-                }
+                self.particle_buf[idx * 2..idx * 2 + particle.history_buf.len()].copy_from_slice(
+                    &particle.history_buf
+                );
+                idx += particle.history_buf.len() / 2;
             }
 
             // For some reason, updating particle.position after writing into particle_buf seems correct,
@@ -1227,6 +1239,7 @@ impl State {
 }
 
 trait Renderer {
+    fn is_webgl(&self) -> bool;
     fn start(&self, _state: &mut State) -> Result<(), JsValue> {
         Ok(())
     }
@@ -1238,6 +1251,9 @@ struct CanvasRenderer {
 }
 
 impl Renderer for CanvasRenderer {
+    fn is_webgl(&self) -> bool {
+        false
+    }
     fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
             wasm_bindgen::Clamped(data), state.shape.0 as u32, state.shape.1 as u32).unwrap();
@@ -1255,6 +1271,9 @@ struct WebGLRenderer {
 }
 
 impl Renderer for WebGLRenderer {
+    fn is_webgl(&self) -> bool {
+        true
+    }
     fn start(&self, state: &mut State) -> Result<(), JsValue> {
         state.start_gl(&self.gl)
     }
@@ -1334,7 +1353,7 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step();
-            state.particle_step();
+            state.particle_step(renderer.is_webgl());
         }
 
         state.render_fluid(&mut data);
