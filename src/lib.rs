@@ -448,6 +448,7 @@ struct Params{
 }
 
 const PARTICLE_SIZE: f32 = 0.75;
+const PARTICLE_MAX_TRAIL_LEN: usize = 10;
 
 struct Assets {
     instanced_arrays_ext: Option<AngleInstancedArrays>,
@@ -476,7 +477,10 @@ struct State {
     shape: Shape,
     params: Params,
     particles: Vec<Particle>,
+    /// In-memory buffer to avoid reallocating huge memory every tick
     particle_buf: Vec<f32>,
+    /// Actually used length of particle_buf, which can be less than buffer's length
+    particle_buf_active_len: usize,
     xor128: Xor128,
     assets: Assets,
 }
@@ -529,6 +533,7 @@ impl State {
             params,
             particles,
             particle_buf: vec![],
+            particle_buf_active_len: 0,
             xor128,
             assets: Assets {
                 instanced_arrays_ext: None,
@@ -640,12 +645,14 @@ impl State {
     }
 
     fn particle_step(&mut self) {
-        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
-        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
-            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
-        let particles_len = self.particles.len();
 
-        for (i, particle) in self.particles.iter_mut().enumerate() {
+        let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 2;
+        if self.particle_buf.len() < desired_len {
+            self.particle_buf.resize(desired_len, 0.);
+        }
+
+        let mut idx = 0;
+        for particle in &mut self.particles {
             let pvx = self.vx[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let pvy = self.vy[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let dtx = self.params.delta_time * (self.shape.0 - 2) as f64;
@@ -659,20 +666,31 @@ impl State {
                 particle.history.push(particle.position);
             }
 
+            if self.assets.instanced_arrays_ext.is_some() {
+                let (x, y) = (particle.position.0, particle.position.1);
+                self.particle_buf[idx * 2    ] = x as f32 / self.shape.0 as f32;
+                self.particle_buf[idx * 2 + 1] = y as f32 / self.shape.1 as f32;
+                idx += 1;
+
+                for (t, (x, y)) in particle.history.iter().enumerate() {
+                    if self.params.particle_trails <= t {
+                        break;
+                    }
+                    self.particle_buf[idx * 2    ] = *x as f32 / self.shape.0 as f32;
+                    self.particle_buf[idx * 2 + 1] = *y as f32 / self.shape.1 as f32;
+                    idx += 1;
+                }
+            }
+
+            // For some reason, updating particle.position after writing into particle_buf seems correct,
+            // but I thought it should be the other way around.
             let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
             particle.position.0 = (particle.position.0 + dtx * pvx + fwidth) % fwidth;
             particle.position.1 = (particle.position.1 + dty * pvy + fheight) % fheight;
+        }
 
-            if self.assets.instanced_arrays_ext.is_some() {
-                let desired_len = particles_len * 2;
-                if self.particle_buf.len() < desired_len {
-                    self.particle_buf.resize(desired_len, 0.);
-                }
-
-                let (x, y) = (particle.position.0, particle.position.1);
-                self.particle_buf[i * 2    ] = x as f32 / self.shape.0 as f32;
-                self.particle_buf[i * 2 + 1] = y as f32 / self.shape.1 as f32;
-            }
+        if self.assets.instanced_arrays_ext.is_some() {
+            self.particle_buf_active_len = idx;
         }
     }
 
@@ -845,7 +863,7 @@ impl State {
             GL::TRIANGLE_FAN,
             0,   // offset
             4,   // num vertices per instance
-            self.particles.len() as i32,  // num instances
+            self.particle_buf_active_len as i32,  // num instances
         )?;
 
         Ok(())
@@ -1130,7 +1148,7 @@ impl State {
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         gl.buffer_data_with_i32(
             GL::ARRAY_BUFFER,
-            (self.particles.len() * 2 * std::mem::size_of::<f32>() * PARTICLE_MAX_TRAIL_LEN) as i32,
+            (self.particles.len() * 2 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
             GL::DYNAMIC_DRAW
         );
 

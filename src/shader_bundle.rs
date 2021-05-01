@@ -8,7 +8,7 @@ pub struct ShaderBundle {
     pub transform_loc: Option<WebGlUniformLocation>,
     pub tex_transform_loc: Option<WebGlUniformLocation>,
     pub alpha_loc: Option<WebGlUniformLocation>,
-    pub matrix_loc: i32,
+    pub position_loc: i32,
 }
 
 impl ShaderBundle {
@@ -33,7 +33,7 @@ impl ShaderBundle {
             transform_loc: get_uniform("transform"),
             tex_transform_loc: get_uniform("texTransform"),
             alpha_loc: get_uniform("alpha"),
-            matrix_loc: gl.get_attrib_location(&program, "matrix"),
+            position_loc: gl.get_attrib_location(&program, "position"),
             // Program has to be later than others
             program,
         }
