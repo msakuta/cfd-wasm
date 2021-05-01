@@ -476,6 +476,7 @@ struct State {
     shape: Shape,
     params: Params,
     particles: Vec<Particle>,
+    particle_buf: Vec<f32>,
     xor128: Xor128,
     assets: Assets,
 }
@@ -527,6 +528,7 @@ impl State {
             shape,
             params,
             particles,
+            particle_buf: vec![],
             xor128,
             assets: Assets {
                 instanced_arrays_ext: None,
@@ -638,7 +640,12 @@ impl State {
     }
 
     fn particle_step(&mut self) {
-        for particle in &mut self.particles {
+        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
+        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+        let particles_len = self.particles.len();
+
+        for (i, particle) in self.particles.iter_mut().enumerate() {
             let pvx = self.vx[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let pvy = self.vy[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let dtx = self.params.delta_time * (self.shape.0 - 2) as f64;
@@ -655,6 +662,20 @@ impl State {
             let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
             particle.position.0 = (particle.position.0 + dtx * pvx + fwidth) % fwidth;
             particle.position.1 = (particle.position.1 + dty * pvy + fheight) % fheight;
+
+            if self.assets.instanced_arrays_ext.is_some() {
+                let desired_len = particles_len * 16;
+                if self.particle_buf.len() < desired_len {
+                    self.particle_buf.resize(desired_len, 0.);
+                }
+
+                let (x, y) = (particle.position.0, particle.position.1);
+                let translation = Matrix4::from_translation(
+                    Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+                self.particle_buf[i * 16..(i + 1) * 16].copy_from_slice(
+                    <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+                );
+            }
         }
     }
 
@@ -793,8 +814,6 @@ impl State {
 
         gl.use_program(Some(&shader.program));
 
-        let mut matrix_data = vec![0f32; self.particles.len() * 16];
-
         gl.active_texture(GL::TEXTURE0);
         gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
 
@@ -806,22 +825,8 @@ impl State {
 
         gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
 
-        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
-        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
-            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
-
-        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
-        for (i, particle) in self.particles.iter().enumerate() {
-            let (x, y) = (particle.position.0, particle.position.1);
-            let translation = Matrix4::from_translation(
-                Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
-            matrix_data[i * 16..(i + 1) * 16].copy_from_slice(
-                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
-            );
-        }
-
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
-        vertex_buffer_sub_data(gl, &matrix_data);
+        vertex_buffer_sub_data(gl, &self.particle_buf);
 
         const BYTES_PER_MATRIX: i32 = 4 * 16;
         for i in 0..4 {
