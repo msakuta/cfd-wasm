@@ -650,7 +650,7 @@ impl State {
 
     fn particle_step(&mut self, use_webgl: bool) {
 
-        let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 2;
+        let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 3;
         if self.particle_buf.len() < desired_len {
             self.particle_buf.resize(desired_len, 0.);
         }
@@ -664,7 +664,8 @@ impl State {
 
             if 0 < self.params.particle_trails {
                 if use_webgl && self.assets.instanced_arrays_ext.is_some() {
-                    while self.params.particle_trails <= particle.history_buf.len() / 2 {
+                    while self.params.particle_trails <= particle.history_buf.len() / 3 {
+                        particle.history_buf.remove(0);
                         particle.history_buf.remove(0);
                         particle.history_buf.remove(0);
                     }
@@ -672,6 +673,7 @@ impl State {
                     particle.history_buf.extend_from_slice(&[
                         particle.position.0 as f32 / self.shape.0 as f32,
                         particle.position.1 as f32 / self.shape.1 as f32,
+                        1.,
                     ]);
                 } else {
                     while self.params.particle_trails <= particle.history.len() {
@@ -684,14 +686,19 @@ impl State {
 
             if use_webgl && self.assets.instanced_arrays_ext.is_some() {
                 let (x, y) = (particle.position.0, particle.position.1);
-                self.particle_buf[idx * 2    ] = x as f32 / self.shape.0 as f32;
-                self.particle_buf[idx * 2 + 1] = y as f32 / self.shape.1 as f32;
+                self.particle_buf[idx * 3    ] = x as f32 / self.shape.0 as f32;
+                self.particle_buf[idx * 3 + 1] = y as f32 / self.shape.1 as f32;
+                self.particle_buf[idx * 3 + 2] = 1.;
                 idx += 1;
 
-                self.particle_buf[idx * 2..idx * 2 + particle.history_buf.len()].copy_from_slice(
+                self.particle_buf[idx * 3..idx * 3 + particle.history_buf.len()].copy_from_slice(
                     &particle.history_buf
                 );
-                idx += particle.history_buf.len() / 2;
+                let history_len = particle.history_buf.len() / 3;
+                for i in 0..history_len {
+                    self.particle_buf[(idx + i) * 3 + 2] = i as f32 / history_len as f32;
+                }
+                idx += particle.history_buf.len() / 3;
             }
 
             // For some reason, updating particle.position after writing into particle_buf seems correct,
@@ -835,7 +842,7 @@ impl State {
 
 
         let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
-        if shader.position_loc < 0 {
+        if shader.attrib_position_loc < 0 {
             return Err(JsValue::from_str("matrix location was not found"));
         }
 
@@ -862,14 +869,17 @@ impl State {
             <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
         );
 
-        gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
-
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         vertex_buffer_sub_data(gl, &self.particle_buf);
 
-        enable_buffer(gl, &self.assets.particle_buffer, 2, shader.position_loc as u32);
+        let stride = 3 * 4;
+        gl.vertex_attrib_pointer_with_i32(shader.attrib_position_loc as u32, 2, GL::FLOAT, false, stride, 0);
+        gl.vertex_attrib_pointer_with_i32(shader.attrib_alpha_loc as u32, 1, GL::FLOAT, false, stride, 2 * 4);
 
-        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.position_loc as u32, 1);
+        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.attrib_position_loc as u32, 1);
+        gl.enable_vertex_attrib_array(shader.attrib_position_loc as u32);
+        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.attrib_alpha_loc as u32, 1);
+        gl.enable_vertex_attrib_array(shader.attrib_alpha_loc as u32);
 
         instanced_arrays_ext.draw_arrays_instanced_angle(
             GL::TRIANGLE_FAN,
@@ -1038,27 +1048,6 @@ impl State {
 
         self.assets.rect_shader = Some(shader);
 
-        let vert_shader_instancing = compile_shader(
-            &gl,
-            GL::VERTEX_SHADER,
-            r#"
-            attribute vec2 vertexData;
-            attribute vec2 position;
-            uniform mat4 transform;
-            uniform mat3 texTransform;
-            varying vec2 texCoords;
-
-            void main() {
-                mat4 centerize = mat4(
-                    4, 0, 0, 0,
-                    0, -4, 0, 0,
-                    0, 0, 4, 0,
-                    -1, 1, -1, 1);
-                gl_Position = centerize * (transform * vec4(vertexData.xy, 0.0, 1.0) + vec4(position.xy, 0.0, 1.0));
-                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
-            }
-        "#,
-        )?;
         let frag_shader_add = compile_shader(
             &gl,
             GL::FRAGMENT_SHADER,
@@ -1076,9 +1065,51 @@ impl State {
             }
         "#,
         )?;
-        let program = link_program(&gl, &vert_shader_instancing, &frag_shader_add)?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
+
+        let vert_shader_instancing = compile_shader(
+            &gl,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec2 vertexData;
+            attribute vec2 position;
+            attribute float alpha;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            varying float alphaVar;
+
+            void main() {
+                mat4 centerize = mat4(
+                    4, 0, 0, 0,
+                    0, -4, 0, 0,
+                    0, 0, 4, 0,
+                    -1, 1, -1, 1);
+                gl_Position = centerize * (transform * vec4(vertexData.xy, 0.0, 1.0) + vec4(position.xy, 0.0, 1.0));
+                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
+                alphaVar = alpha;
+            }
+        "#,
+        )?;
+        let frag_shader_instancing = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+            varying float alphaVar;
+
+            uniform sampler2D texture;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.r * alphaVar);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader_instancing, &frag_shader_instancing)?;
         let shader = ShaderBundle::new(&gl, program);
-        gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
         self.assets.particle_shader = Some(shader);
 
         let frag_shader_flat = compile_shader(
@@ -1160,7 +1191,7 @@ impl State {
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         gl.buffer_data_with_i32(
             GL::ARRAY_BUFFER,
-            (self.particles.len() * 2 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
+            (self.particles.len() * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
             GL::DYNAMIC_DRAW
         );
 
