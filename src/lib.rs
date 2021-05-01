@@ -664,17 +664,14 @@ impl State {
             particle.position.1 = (particle.position.1 + dty * pvy + fheight) % fheight;
 
             if self.assets.instanced_arrays_ext.is_some() {
-                let desired_len = particles_len * 16;
+                let desired_len = particles_len * 2;
                 if self.particle_buf.len() < desired_len {
                     self.particle_buf.resize(desired_len, 0.);
                 }
 
                 let (x, y) = (particle.position.0, particle.position.1);
-                let translation = Matrix4::from_translation(
-                    Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
-                self.particle_buf[i * 16..(i + 1) * 16].copy_from_slice(
-                    <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
-                );
+                self.particle_buf[i * 2    ] = x as f32 / self.shape.0 as f32;
+                self.particle_buf[i * 2 + 1] = y as f32 / self.shape.1 as f32;
             }
         }
     }
@@ -808,7 +805,7 @@ impl State {
 
 
         let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
-        if shader.matrix_loc < 0 {
+        if shader.position_loc < 0 {
             return Err(JsValue::from_str("matrix location was not found"));
         }
 
@@ -816,6 +813,18 @@ impl State {
 
         gl.active_texture(GL::TEXTURE0);
         gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
+
+        let scale = Matrix4::from_nonuniform_scale(
+            PARTICLE_SIZE / self.shape.0 as f32,
+            -PARTICLE_SIZE / self.shape.1 as f32,
+            1.
+        );
+
+        gl.uniform_matrix4fv_with_f32_array(
+            shader.transform_loc.as_ref(),
+            false,
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(scale))
+        );
 
         gl.uniform_matrix3fv_with_f32_array(
             shader.tex_transform_loc.as_ref(),
@@ -828,27 +837,13 @@ impl State {
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         vertex_buffer_sub_data(gl, &self.particle_buf);
 
-        const BYTES_PER_MATRIX: i32 = 4 * 16;
-        for i in 0..4 {
-            let loc = shader.matrix_loc as u32 + i;
-            gl.enable_vertex_attrib_array(loc);
-            // note the stride and offset
-            let offset = i * 16;  // 4 floats per row, 4 bytes per float
-            gl.vertex_attrib_pointer_with_i32(
-                loc,              // location
-                4,                // size (num values to pull from buffer per iteration)
-                GL::FLOAT,         // type of data in buffer
-                false,            // normalize
-                BYTES_PER_MATRIX,   // stride, num bytes to advance to get to next set of values
-                offset as i32,      // offset in buffer
-            );
-            // this line says this attribute only changes for each 1 instance
-            instanced_arrays_ext.vertex_attrib_divisor_angle(loc, 1);
-        }
+        enable_buffer(gl, &self.assets.particle_buffer, 2, shader.position_loc as u32);
+
+        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.position_loc as u32, 1);
 
         instanced_arrays_ext.draw_arrays_instanced_angle(
             GL::TRIANGLE_FAN,
-            0,             // offset
+            0,   // offset
             4,   // num vertices per instance
             self.particles.len() as i32,  // num instances
         )?;
@@ -1018,12 +1013,18 @@ impl State {
             GL::VERTEX_SHADER,
             r#"
             attribute vec2 vertexData;
-            attribute mat4 matrix;
+            attribute vec2 position;
+            uniform mat4 transform;
             uniform mat3 texTransform;
             varying vec2 texCoords;
 
             void main() {
-                gl_Position = matrix * vec4(vertexData.xy, 0.0, 1.0);
+                mat4 centerize = mat4(
+                    4, 0, 0, 0,
+                    0, -4, 0, 0,
+                    0, 0, 4, 0,
+                    -1, 1, -1, 1);
+                gl_Position = centerize * (transform * vec4(vertexData.xy, 0.0, 1.0) + vec4(position.xy, 0.0, 1.0));
                 texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
             }
         "#,
@@ -1127,8 +1128,11 @@ impl State {
 
         self.assets.particle_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
-        gl.buffer_data_with_i32(GL::ARRAY_BUFFER, (self.particles.len() * 16 * std::mem::size_of::<f32>()) as i32,
-            GL::DYNAMIC_DRAW);
+        gl.buffer_data_with_i32(
+            GL::ARRAY_BUFFER,
+            (self.particles.len() * 2 * std::mem::size_of::<f32>() * PARTICLE_MAX_TRAIL_LEN) as i32,
+            GL::DYNAMIC_DRAW
+        );
 
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
 
