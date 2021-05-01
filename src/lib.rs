@@ -344,9 +344,7 @@ fn decay(s: &mut [f64], decay_rate: f64) {
 struct Particle {
     position: (f64, f64),
     history: Vec<(f64, f64)>,
-    /// History buffer is formatted in a way that is easy to memcpy into cached buffer.
-    /// In particular, 2D vector is flattened into 1D vector.
-    history_buf: Vec<f32>,
+    history_buf: Vec<(f32, f32)>,
 }
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
@@ -664,15 +662,14 @@ impl State {
 
             if 0 < self.params.particle_trails {
                 if use_webgl && self.assets.instanced_arrays_ext.is_some() {
-                    while self.params.particle_trails <= particle.history_buf.len() / 2 {
-                        particle.history_buf.remove(0);
+                    while self.params.particle_trails <= particle.history_buf.len() {
                         particle.history_buf.remove(0);
                     }
 
-                    particle.history_buf.extend_from_slice(&[
+                    particle.history_buf.push((
                         particle.position.0 as f32 / self.shape.0 as f32,
                         particle.position.1 as f32 / self.shape.1 as f32,
-                    ]);
+                    ));
                 } else {
                     while self.params.particle_trails <= particle.history.len() {
                         particle.history.remove(0);
@@ -689,13 +686,13 @@ impl State {
                 self.particle_buf[idx * 3 + 2] = 1.;
                 idx += 1;
 
-                let history_len = particle.history_buf.len() / 2;
-                for i in 0..history_len {
-                    self.particle_buf[(idx + i) * 3    ] = particle.history_buf[i * 2    ];
-                    self.particle_buf[(idx + i) * 3 + 1] = particle.history_buf[i * 2 + 1];
+                let history_len = particle.history_buf.len();
+                for (i, position) in particle.history_buf.iter().enumerate() {
+                    self.particle_buf[(idx + i) * 3    ] = position.0;
+                    self.particle_buf[(idx + i) * 3 + 1] = position.1;
                     self.particle_buf[(idx + i) * 3 + 2] = i as f32 / history_len as f32;
                 }
-                idx += particle.history_buf.len() / 2;
+                idx += particle.history_buf.len();
             }
 
             // For some reason, updating particle.position after writing into particle_buf seems correct,
