@@ -664,8 +664,7 @@ impl State {
 
             if 0 < self.params.particle_trails {
                 if use_webgl && self.assets.instanced_arrays_ext.is_some() {
-                    while self.params.particle_trails <= particle.history_buf.len() / 3 {
-                        particle.history_buf.remove(0);
+                    while self.params.particle_trails <= particle.history_buf.len() / 2 {
                         particle.history_buf.remove(0);
                         particle.history_buf.remove(0);
                     }
@@ -673,7 +672,6 @@ impl State {
                     particle.history_buf.extend_from_slice(&[
                         particle.position.0 as f32 / self.shape.0 as f32,
                         particle.position.1 as f32 / self.shape.1 as f32,
-                        1.,
                     ]);
                 } else {
                     while self.params.particle_trails <= particle.history.len() {
@@ -691,14 +689,13 @@ impl State {
                 self.particle_buf[idx * 3 + 2] = 1.;
                 idx += 1;
 
-                self.particle_buf[idx * 3..idx * 3 + particle.history_buf.len()].copy_from_slice(
-                    &particle.history_buf
-                );
-                let history_len = particle.history_buf.len() / 3;
+                let history_len = particle.history_buf.len() / 2;
                 for i in 0..history_len {
+                    self.particle_buf[(idx + i) * 3    ] = particle.history_buf[i * 2    ];
+                    self.particle_buf[(idx + i) * 3 + 1] = particle.history_buf[i * 2 + 1];
                     self.particle_buf[(idx + i) * 3 + 2] = i as f32 / history_len as f32;
                 }
-                idx += particle.history_buf.len() / 3;
+                idx += particle.history_buf.len() / 2;
             }
 
             // For some reason, updating particle.position after writing into particle_buf seems correct,
