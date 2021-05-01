@@ -30,6 +30,24 @@ macro_rules! console_log {
 
 mod shader_bundle;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = ANGLEInstancedArrays)]
+    type AngleInstancedArrays;
+
+    #[wasm_bindgen(method, getter, js_name = VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE)]
+    fn vertex_attrib_array_divisor_angle(this: &AngleInstancedArrays) -> i32;
+
+    #[wasm_bindgen(method, catch, js_name = drawArraysInstancedANGLE)]
+    fn draw_arrays_instanced_angle(this: &AngleInstancedArrays, mode: u32, first: i32, count: i32, primcount: i32) -> Result<(), JsValue>;
+
+    // TODO offset should be i64
+    #[wasm_bindgen(method, catch, js_name = drawElementsInstancedANGLE)]
+    fn draw_elements_instanced_angle(this: &AngleInstancedArrays, mode: u32, count: i32, type_: u32, offset: i32, primcount: i32) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, js_name = vertexAttribDivisorANGLE)]
+    fn vertex_attrib_divisor_angle(this: &AngleInstancedArrays, index: u32, divisor: u32);
+}
 
 fn window() -> web_sys::Window {
     web_sys::window().expect("no global `window` exists")
@@ -429,7 +447,10 @@ struct Params{
     boundary_x: BoundaryCondition,
 }
 
+const PARTICLE_SIZE: f32 = 0.75;
+
 struct Assets {
+    instanced_arrays_ext: Option<AngleInstancedArrays>,
     flow_tex: Option<WebGlTexture>,
     particle_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
@@ -439,6 +460,7 @@ struct Assets {
     pub trail_buffer: Option<WebGlBuffer>,
     pub rect_buffer: Option<WebGlBuffer>,
     arrow_buffer: Option<WebGlBuffer>,
+    particle_buffer: Option<WebGlBuffer>,
 }
 
 struct State {
@@ -507,6 +529,7 @@ impl State {
             particles,
             xor128,
             assets: Assets {
+                instanced_arrays_ext: None,
                 flow_tex: None,
                 particle_tex: None,
                 rect_shader: None,
@@ -516,6 +539,7 @@ impl State {
                 trail_buffer: None,
                 rect_buffer: None,
                 arrow_buffer: None,
+                particle_buffer: None,
             }
         }
     }
@@ -720,8 +744,6 @@ impl State {
             <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
         );
 
-        const PARTICLE_SIZE: f32 = 0.5;
-
         let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
         let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
             * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
@@ -756,6 +778,76 @@ impl State {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn render_particles_gl_instancing(&self, gl: &GL) -> Result<(), JsValue> {
+        let instanced_arrays_ext = self.assets.instanced_arrays_ext.as_ref()
+            .ok_or_else(|| JsValue::from_str("Instanced arrays not supported"))?;
+
+
+        let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        if shader.matrix_loc < 0 {
+            return Err(JsValue::from_str("matrix location was not found"));
+        }
+
+        gl.use_program(Some(&shader.program));
+
+        let mut matrix_data = vec![0f32; self.particles.len() * 16];
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
+
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+        );
+
+        gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+
+        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
+        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
+        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+        for (i, particle) in self.particles.iter().enumerate() {
+            let (x, y) = (particle.position.0, particle.position.1);
+            let translation = Matrix4::from_translation(
+                Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+            matrix_data[i * 16..(i + 1) * 16].copy_from_slice(
+                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+            );
+        }
+
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
+        vertex_buffer_sub_data(gl, &matrix_data);
+
+        const BYTES_PER_MATRIX: i32 = 4 * 16;
+        for i in 0..4 {
+            let loc = shader.matrix_loc as u32 + i;
+            gl.enable_vertex_attrib_array(loc);
+            // note the stride and offset
+            let offset = i * 16;  // 4 floats per row, 4 bytes per float
+            gl.vertex_attrib_pointer_with_i32(
+                loc,              // location
+                4,                // size (num values to pull from buffer per iteration)
+                GL::FLOAT,         // type of data in buffer
+                false,            // normalize
+                BYTES_PER_MATRIX,   // stride, num bytes to advance to get to next set of values
+                offset as i32,      // offset in buffer
+            );
+            // this line says this attribute only changes for each 1 instance
+            instanced_arrays_ext.vertex_attrib_divisor_angle(loc, 1);
+        }
+
+        instanced_arrays_ext.draw_arrays_instanced_angle(
+            GL::TRIANGLE_FAN,
+            0,             // offset
+            4,   // num vertices per instance
+            self.particles.len() as i32,  // num instances
+        )?;
+
         Ok(())
     }
 
@@ -858,11 +950,15 @@ impl State {
     }
 
 
-    pub fn start(&mut self, gl: &GL) -> Result<(), JsValue> {
+    /// WebGL specific initializations
+    pub fn start_gl(&mut self, gl: &GL) -> Result<(), JsValue> {
 
         self.assets.flow_tex = Some(gen_flow_texture(gl, &self.shape)?);
 
         self.assets.particle_tex = Some(gen_particle_texture(gl)?);
+
+        self.assets.instanced_arrays_ext = Some(gl.get_extension("ANGLE_instanced_arrays")
+            .unwrap().unwrap().unchecked_into::<AngleInstancedArrays>());
 
         let vert_shader = compile_shader(
             &gl,
@@ -912,6 +1008,21 @@ impl State {
 
         self.assets.rect_shader = Some(shader);
 
+        let vert_shader_instancing = compile_shader(
+            &gl,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec2 vertexData;
+            attribute mat4 matrix;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+
+            void main() {
+                gl_Position = matrix * vec4(vertexData.xy, 0.0, 1.0);
+                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
+            }
+        "#,
+        )?;
         let frag_shader_add = compile_shader(
             &gl,
             GL::FRAGMENT_SHADER,
@@ -929,7 +1040,7 @@ impl State {
             }
         "#,
         )?;
-        let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
+        let program = link_program(&gl, &vert_shader_instancing, &frag_shader_add)?;
         let shader = ShaderBundle::new(&gl, program);
         gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
         self.assets.particle_shader = Some(shader);
@@ -1009,6 +1120,11 @@ impl State {
         let arrow_vertices: [f32; 6] = [1., 0., -1., -0.2, -1., 0.2];
         vertex_buffer_data(&gl, &arrow_vertices);
 
+        self.assets.particle_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
+        gl.buffer_data_with_i32(GL::ARRAY_BUFFER, (self.particles.len() * 16 * std::mem::size_of::<f32>()) as i32,
+            GL::DYNAMIC_DRAW);
+
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
 
         Ok(())
@@ -1072,7 +1188,11 @@ impl State {
         self.draw_tex(gl)?;
 
         if self.params.particles {
-            self.render_particles_gl(gl)?;
+            if self.assets.instanced_arrays_ext.is_some() {
+                self.render_particles_gl_instancing(gl)?;
+            } else {
+                self.render_particles_gl(gl)?;
+            }
         }
 
         Ok(())
@@ -1109,7 +1229,7 @@ struct WebGLRenderer {
 
 impl Renderer for WebGLRenderer {
     fn start(&self, state: &mut State) -> Result<(), JsValue> {
-        state.start(&self.gl)
+        state.start_gl(&self.gl)
     }
     fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
         self.gl.clear(GL::COLOR_BUFFER_BIT);
@@ -1366,6 +1486,23 @@ pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
         let vert_array = js_sys::Float32Array::view(vertices);
 
         context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
+    };
+}
+
+
+pub fn vertex_buffer_sub_data(context: &GL, vertices: &[f32]) {
+    // Note that `Float32Array::view` is somewhat dangerous (hence the
+    // `unsafe`!). This is creating a raw view into our module's
+    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
+    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
+    // causing the `Float32Array` to be invalid.
+    //
+    // As a result, after `Float32Array::view` we have to be very careful not to
+    // do any memory allocations before it's dropped.
+    unsafe {
+        let vert_array = js_sys::Float32Array::view(vertices);
+
+        context.buffer_sub_data_with_i32_and_array_buffer_view(GL::ARRAY_BUFFER, 0, &vert_array);
     };
 }
 
