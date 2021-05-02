@@ -10,7 +10,16 @@ async function run(module) {
   let canvas;
   let canvasSize;
 
+  let useWebGL = true;
   let [width, height] = [200, 200];
+  let pendingRestart = false;
+
+  function setUseWebGL(value){
+    useWebGL = value;
+    [pixelScale, canvasScale] = useWebGL ? [1., 4] : [4., 1.];
+    resizeCanvas();
+    pendingRestart = true;
+  }
 
   function resizeCanvas(){
     if(canvas)
@@ -26,9 +35,8 @@ async function run(module) {
       params.mousePos = [event.offsetX / canvasScale / pixelScale, event.offsetY / canvasScale / pixelScale];
     });
   }
-  resizeCanvas();
 
-  let useWebGL = false;
+  setUseWebGL(true);
 
   let params = {
     deltaTime: 1.0,
@@ -107,13 +115,7 @@ async function run(module) {
     radioButton.addEventListener("click", update);
     return radioButton;
   }
-  let pendingRestart = false;
-  const useWebGLCheck = checkboxInit("useWebGL", value => {
-    useWebGL = value;
-    [pixelScale, canvasScale] = useWebGL ? [1., 4] : [4., 1.];
-    resizeCanvas();
-    pendingRestart = true;
-  });
+  const useWebGLCheck = checkboxInit("useWebGL", setUseWebGL);
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => params.skipFrames = value);
   const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value, true);
