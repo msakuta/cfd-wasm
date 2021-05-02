@@ -1,4 +1,4 @@
-use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlUniformLocation};
+use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlUniformLocation};
 
 pub struct ShaderBundle {
     pub program: WebGlProgram,

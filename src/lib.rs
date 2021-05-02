@@ -97,23 +97,6 @@ impl Xor128{
     }
 }
 
-const CHECKER_CELL: usize = 16;
-
-fn fill_checker(density: &mut [f64], (width, height): (usize, usize)) {
-    for y2 in 0..height / CHECKER_CELL {
-        for x2 in 0..width / CHECKER_CELL {
-            if (x2 + y2) % 2 == 0 {
-                for y in y2 * CHECKER_CELL..(y2 + 1) * CHECKER_CELL {
-                    for x in x2 * CHECKER_CELL..(x2 + 1) * CHECKER_CELL {
-                        density[x * width + y] = 1.;
-                    }
-                }
-            }
-        }
-    }
-}
-
-
 fn ceil_pow2(i: isize) -> isize {
     let mut bit = 0;
     while (1 << bit) < i {
@@ -284,28 +267,6 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
     set_bnd(b, d, shape, params);
 }
 
-fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
-    for j in 0..shape.1 {
-        for i in 0..shape.0 {
-            proc((i, j),
-                vx[shape.idx(i+1, j  )]
-                -vx[shape.idx(i-1, j  )]
-                +vy[shape.idx(i  , j+1)]
-                -vy[shape.idx(i  , j-1)])
-        }
-    }
-}
-
-fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
-    let mut sum = 0.;
-    let mut max = 0.;
-    divergence(vx, vy, shape, |_, div| {
-        sum += div;
-        max = div.max(max);
-    });
-    (sum, max)
-}
-
 fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, params: &Params) {
     let (ib, ie, jb, je) = get_range(shape, params);
     for j in jb..je {
@@ -458,6 +419,7 @@ struct Assets {
     particle_tex: Option<WebGlTexture>,
     rect_shader: Option<ShaderBundle>,
     particle_shader: Option<ShaderBundle>,
+    particle_instancing_shader: Option<ShaderBundle>,
     arrow_shader: Option<ShaderBundle>,
     trail_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
@@ -543,6 +505,7 @@ impl State {
                 particle_tex: None,
                 rect_shader: None,
                 particle_shader: None,
+                particle_instancing_shader: None,
                 arrow_shader: None,
                 trail_shader: None,
                 trail_buffer: None,
@@ -780,8 +743,10 @@ impl State {
         }
     }
 
+    /// Render particles without instancing. It's slow because it has to make a lot of WebGL calls.
     fn render_particles_gl(&self, gl: &GL) -> Result<(), JsValue> {
-        let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        let shader = self.assets.particle_shader
+            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
         gl.use_program(Some(&shader.program));
 
         gl.active_texture(GL::TEXTURE0);
@@ -830,12 +795,15 @@ impl State {
         Ok(())
     }
 
+    /// Render particles if the device supports instancing. It is much faster with fewer calls to the API.
+    /// Note that there are no loops at all in this function.
     fn render_particles_gl_instancing(&self, gl: &GL) -> Result<(), JsValue> {
         let instanced_arrays_ext = self.assets.instanced_arrays_ext.as_ref()
             .ok_or_else(|| JsValue::from_str("Instanced arrays not supported"))?;
 
 
-        let shader = self.assets.particle_shader.as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        let shader = self.assets.particle_instancing_shader
+            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
         if shader.attrib_position_loc < 0 {
             return Err(JsValue::from_str("matrix location was not found"));
         }
@@ -991,8 +959,13 @@ impl State {
 
         self.assets.particle_tex = Some(gen_particle_texture(gl)?);
 
-        self.assets.instanced_arrays_ext = Some(gl.get_extension("ANGLE_instanced_arrays")
-            .unwrap().unwrap().unchecked_into::<AngleInstancedArrays>());
+        self.assets.instanced_arrays_ext = gl.get_extension("ANGLE_instanced_arrays")
+            .unwrap_or(None).map(|v| v.unchecked_into::<AngleInstancedArrays>());
+        console_log!("WebGL Instanced arrays is {}", if self.assets.instanced_arrays_ext.is_some() {
+            "available"
+        } else {
+            "not available"
+        });
 
         let vert_shader = compile_shader(
             &gl,
@@ -1060,6 +1033,8 @@ impl State {
         "#,
         )?;
         let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
+        let shader = ShaderBundle::new(&gl, program);
+        self.assets.particle_shader = Some(shader);
 
         let vert_shader_instancing = compile_shader(
             &gl,
@@ -1104,7 +1079,7 @@ impl State {
         )?;
         let program = link_program(&gl, &vert_shader_instancing, &frag_shader_instancing)?;
         let shader = ShaderBundle::new(&gl, program);
-        self.assets.particle_shader = Some(shader);
+        self.assets.particle_instancing_shader = Some(shader);
 
         let frag_shader_flat = compile_shader(
             &gl,
@@ -1349,8 +1324,8 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
         // let mut div = vec![0f64; width * height];
         // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
-        let average = state.vx.iter().zip(state.vy.iter())
-            .fold(0f64, |acc, v| acc.max((v.0 * v.0 + v.1 * v.1).sqrt()));
+        // let average = state.vx.iter().zip(state.vy.iter())
+        //     .fold(0f64, |acc, v| acc.max((v.0 * v.0 + v.1 * v.1).sqrt()));
 
         // console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
         //     i, average,
