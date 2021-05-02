@@ -6,6 +6,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::{CanvasRenderingContext2d, WebGlBuffer, WebGlProgram,
+    WebGlRenderingContext as GL, WebGlShader, WebGlTexture};
+use cgmath::{Matrix3, Matrix4, Vector3, Rad};
+
+use shader_bundle::ShaderBundle;
 
 #[wasm_bindgen]
 extern "C" {
@@ -15,11 +20,33 @@ extern "C" {
 
 macro_rules! console_log {
     ($fmt:expr, $($arg1:expr),*) => {
-        log(&format!($fmt, $($arg1),+))
+        crate::log(&format!($fmt, $($arg1),+))
     };
     ($fmt:expr) => {
-        log($fmt)
+        crate::log($fmt)
     }
+}
+
+
+mod shader_bundle;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = ANGLEInstancedArrays)]
+    type AngleInstancedArrays;
+
+    #[wasm_bindgen(method, getter, js_name = VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE)]
+    fn vertex_attrib_array_divisor_angle(this: &AngleInstancedArrays) -> i32;
+
+    #[wasm_bindgen(method, catch, js_name = drawArraysInstancedANGLE)]
+    fn draw_arrays_instanced_angle(this: &AngleInstancedArrays, mode: u32, first: i32, count: i32, primcount: i32) -> Result<(), JsValue>;
+
+    // TODO offset should be i64
+    #[wasm_bindgen(method, catch, js_name = drawElementsInstancedANGLE)]
+    fn draw_elements_instanced_angle(this: &AngleInstancedArrays, mode: u32, count: i32, type_: u32, offset: i32, primcount: i32) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(method, js_name = vertexAttribDivisorANGLE)]
+    fn vertex_attrib_divisor_angle(this: &AngleInstancedArrays, index: u32, divisor: u32);
 }
 
 fn window() -> web_sys::Window {
@@ -70,22 +97,13 @@ impl Xor128{
     }
 }
 
-const CHECKER_CELL: usize = 16;
-
-fn fill_checker(density: &mut [f64], (width, height): (usize, usize)) {
-    for y2 in 0..height / CHECKER_CELL {
-        for x2 in 0..width / CHECKER_CELL {
-            if (x2 + y2) % 2 == 0 {
-                for y in y2 * CHECKER_CELL..(y2 + 1) * CHECKER_CELL {
-                    for x in x2 * CHECKER_CELL..(x2 + 1) * CHECKER_CELL {
-                        density[x * width + y] = 1.;
-                    }
-                }
-            }
-        }
+fn ceil_pow2(i: isize) -> isize {
+    let mut bit = 0;
+    while (1 << bit) < i {
+        bit += 1;
     }
+    1 << bit
 }
-
 
 
 trait Idx {
@@ -249,28 +267,6 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
     set_bnd(b, d, shape, params);
 }
 
-fn divergence(vx: &[f64], vy: &[f64], shape: Shape, mut proc: impl FnMut(Shape, f64)) {
-    for j in 0..shape.1 {
-        for i in 0..shape.0 {
-            proc((i, j),
-                vx[shape.idx(i+1, j  )]
-                -vx[shape.idx(i-1, j  )]
-                +vy[shape.idx(i  , j+1)]
-                -vy[shape.idx(i  , j-1)])
-        }
-    }
-}
-
-fn sum_divergence(vx: &[f64], vy: &[f64], shape: Shape) -> (f64, f64) {
-    let mut sum = 0.;
-    let mut max = 0.;
-    divergence(vx, vy, shape, |_, div| {
-        sum += div;
-        max = div.max(max);
-    });
-    (sum, max)
-}
-
 fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, params: &Params) {
     let (ib, ie, jb, je) = get_range(shape, params);
     for j in jb..je {
@@ -309,14 +305,76 @@ fn decay(s: &mut [f64], decay_rate: f64) {
 struct Particle {
     position: (f64, f64),
     history: Vec<(f64, f64)>,
+    history_buf: Vec<(f32, f32)>,
 }
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
-    (0..1000).map(|_| Particle {
+    (0..PARTICLE_COUNT).map(|_| Particle {
         position: ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64),
         history: vec![],
+        history_buf: vec![],
     }).collect::<Vec<_>>()
 }
+
+/// Create a texture buffer, which could be filled by later texSubImage calls.
+fn gen_flow_texture(context: &GL, shape: &Shape) -> Result<WebGlTexture, JsValue> {
+    let texture = context.create_texture().unwrap();
+    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+        GL::TEXTURE_2D,
+        0,
+        GL::RGBA as i32,
+        ceil_pow2(shape.0) as i32,
+        ceil_pow2(shape.1) as i32,
+        0,
+        GL::RGBA,
+        GL::UNSIGNED_BYTE,
+        None,
+    )?;
+
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+    Ok(texture)
+}
+
+/// Procedurally create a texture with round border
+fn gen_particle_texture(context: &GL) -> Result<WebGlTexture, JsValue> {
+    let texture = context.create_texture().unwrap();
+    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
+
+    const PARTICLE_TEXTURE_SIZE: usize = 8;
+    const PARTICLE_TEXTURE_HALF_SIZE: usize = PARTICLE_TEXTURE_SIZE / 2;
+    let mut image = [0u8; PARTICLE_TEXTURE_SIZE * PARTICLE_TEXTURE_SIZE];
+    for i in 0..PARTICLE_TEXTURE_SIZE {
+        for j in 0..PARTICLE_TEXTURE_SIZE {
+            let x = (i as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            let y = (j as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            image[i * PARTICLE_TEXTURE_SIZE + j] = ((1. - (x * x + y * y).sqrt()).max(0.) * 255.) as u8;
+        }
+    }
+
+    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+        GL::TEXTURE_2D,
+        0,
+        GL::LUMINANCE as i32,
+        PARTICLE_TEXTURE_SIZE as i32,
+        PARTICLE_TEXTURE_SIZE as i32,
+        0,
+        GL::LUMINANCE,
+        GL::UNSIGNED_BYTE,
+        Some(&image),
+    )?;
+
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
+    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
+
+    Ok(texture)
+}
+
 
 #[derive(Copy, Clone, PartialEq)]
 enum BoundaryCondition {
@@ -352,6 +410,25 @@ struct Params{
     boundary_x: BoundaryCondition,
 }
 
+const PARTICLE_COUNT: usize = 1000;
+const PARTICLE_SIZE: f32 = 0.75;
+const PARTICLE_MAX_TRAIL_LEN: usize = 10;
+
+struct Assets {
+    instanced_arrays_ext: Option<AngleInstancedArrays>,
+    flow_tex: Option<WebGlTexture>,
+    particle_tex: Option<WebGlTexture>,
+    rect_shader: Option<ShaderBundle>,
+    particle_shader: Option<ShaderBundle>,
+    particle_instancing_shader: Option<ShaderBundle>,
+    arrow_shader: Option<ShaderBundle>,
+    trail_shader: Option<ShaderBundle>,
+    pub trail_buffer: Option<WebGlBuffer>,
+    pub rect_buffer: Option<WebGlBuffer>,
+    arrow_buffer: Option<WebGlBuffer>,
+    particle_buffer: Option<WebGlBuffer>,
+}
+
 struct State {
     density: Vec<f64>,
     density2: Vec<f64>,
@@ -365,7 +442,12 @@ struct State {
     shape: Shape,
     params: Params,
     particles: Vec<Particle>,
+    /// In-memory buffer to avoid reallocating huge memory every tick
+    particle_buf: Vec<f32>,
+    /// Actually used length of particle_buf, which can be less than buffer's length
+    particle_buf_active_len: usize,
     xor128: Xor128,
+    assets: Assets,
 }
 
 impl State {
@@ -415,7 +497,23 @@ impl State {
             shape,
             params,
             particles,
+            particle_buf: vec![],
+            particle_buf_active_len: 0,
             xor128,
+            assets: Assets {
+                instanced_arrays_ext: None,
+                flow_tex: None,
+                particle_tex: None,
+                rect_shader: None,
+                particle_shader: None,
+                particle_instancing_shader: None,
+                arrow_shader: None,
+                trail_shader: None,
+                trail_buffer: None,
+                rect_buffer: None,
+                arrow_buffer: None,
+                particle_buffer: None,
+            }
         }
     }
 
@@ -512,7 +610,14 @@ impl State {
         }
     }
 
-    fn particle_step(&mut self) {
+    fn particle_step(&mut self, use_webgl: bool) {
+
+        let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 3;
+        if self.particle_buf.len() < desired_len {
+            self.particle_buf.resize(desired_len, 0.);
+        }
+
+        let mut idx = 0;
         for particle in &mut self.particles {
             let pvx = self.vx[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
             let pvy = self.vy[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
@@ -520,16 +625,49 @@ impl State {
             let dty = self.params.delta_time * (self.shape.1 - 2) as f64;
 
             if 0 < self.params.particle_trails {
-                while self.params.particle_trails < particle.history.len() {
-                    particle.history.remove(0);
-                }
+                if use_webgl && self.assets.instanced_arrays_ext.is_some() {
+                    while self.params.particle_trails <= particle.history_buf.len() {
+                        particle.history_buf.remove(0);
+                    }
 
-                particle.history.push(particle.position);
+                    particle.history_buf.push((
+                        particle.position.0 as f32 / self.shape.0 as f32,
+                        particle.position.1 as f32 / self.shape.1 as f32,
+                    ));
+                } else {
+                    while self.params.particle_trails <= particle.history.len() {
+                        particle.history.remove(0);
+                    }
+
+                    particle.history.push(particle.position);
+                }
             }
 
+            if use_webgl && self.assets.instanced_arrays_ext.is_some() {
+                let (x, y) = (particle.position.0, particle.position.1);
+                self.particle_buf[idx * 3    ] = x as f32 / self.shape.0 as f32;
+                self.particle_buf[idx * 3 + 1] = y as f32 / self.shape.1 as f32;
+                self.particle_buf[idx * 3 + 2] = 1.;
+                idx += 1;
+
+                let history_len = particle.history_buf.len();
+                for (i, position) in particle.history_buf.iter().enumerate() {
+                    self.particle_buf[(idx + i) * 3    ] = position.0;
+                    self.particle_buf[(idx + i) * 3 + 1] = position.1;
+                    self.particle_buf[(idx + i) * 3 + 2] = i as f32 / history_len as f32;
+                }
+                idx += particle.history_buf.len();
+            }
+
+            // For some reason, updating particle.position after writing into particle_buf seems correct,
+            // but I thought it should be the other way around.
             let (fwidth, fheight) = (self.shape.0 as f64, self.shape.1 as f64);
             particle.position.0 = (particle.position.0 + dtx * pvx + fwidth) % fwidth;
             particle.position.1 = (particle.position.1 + dty * pvy + fheight) % fheight;
+        }
+
+        if self.assets.instanced_arrays_ext.is_some() {
+            self.particle_buf_active_len = idx;
         }
     }
 
@@ -542,7 +680,7 @@ impl State {
         &self.work
     }
 
-    fn render(&mut self, data: &mut Vec<u8>) {
+    fn render_fluid(&mut self, data: &mut Vec<u8>) {
         const U_MAX: f64 = 1.0;
         const V_MAX: f64 = 1.0;
         const W_MAX: f64 = 0.01;
@@ -582,13 +720,9 @@ impl State {
                 }
             }
         }
-
-        if self.params.particles {
-            self.render_particles(data);
-        }
     }
 
-    fn render_particles(&self, data: &mut Vec<u8>) {
+    fn render_particles(&self, data: &mut [u8]) {
         let shape = &self.shape;
         for particle in &self.particles {
             let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
@@ -608,6 +742,116 @@ impl State {
                 }
             }
         }
+    }
+
+    /// Render particles without instancing. It's slow because it has to make a lot of WebGL calls.
+    fn render_particles_gl(&self, gl: &GL) -> Result<(), JsValue> {
+        let shader = self.assets.particle_shader
+            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        gl.use_program(Some(&shader.program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
+
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+        );
+
+        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
+        let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+            * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
+        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+        for particle in &self.particles {
+            let (x, y) = (particle.position.0, particle.position.1);
+            let translation = Matrix4::from_translation(
+                Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+            gl.uniform_matrix4fv_with_f32_array(
+                shader.transform_loc.as_ref(),
+                false,
+                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+            );
+            gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
+
+            gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+
+            if 0 < self.params.particle_trails {
+                for (i, position) in particle.history.iter().enumerate() {
+                    let (x, y) = (position.0, position.1);
+                    let inten = i as f32 / self.params.particle_trails as f32;
+                    let translation = Matrix4::from_translation(
+                        Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+                    gl.uniform_matrix4fv_with_f32_array(
+                        shader.transform_loc.as_ref(),
+                        false,
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+                    );
+                    gl.uniform1f(shader.alpha_loc.as_ref(), inten);
+                    gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Render particles if the device supports instancing. It is much faster with fewer calls to the API.
+    /// Note that there are no loops at all in this function.
+    fn render_particles_gl_instancing(&self, gl: &GL) -> Result<(), JsValue> {
+        let instanced_arrays_ext = self.assets.instanced_arrays_ext.as_ref()
+            .ok_or_else(|| JsValue::from_str("Instanced arrays not supported"))?;
+
+
+        let shader = self.assets.particle_instancing_shader
+            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        if shader.attrib_position_loc < 0 {
+            return Err(JsValue::from_str("matrix location was not found"));
+        }
+
+        gl.use_program(Some(&shader.program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.particle_tex.as_ref());
+
+        let scale = Matrix4::from_nonuniform_scale(
+            PARTICLE_SIZE / self.shape.0 as f32,
+            -PARTICLE_SIZE / self.shape.1 as f32,
+            1.
+        );
+
+        gl.uniform_matrix4fv_with_f32_array(
+            shader.transform_loc.as_ref(),
+            false,
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(scale))
+        );
+
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+        );
+
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
+        vertex_buffer_sub_data(gl, &self.particle_buf);
+
+        let stride = 3 * 4;
+        gl.vertex_attrib_pointer_with_i32(shader.attrib_position_loc as u32, 2, GL::FLOAT, false, stride, 0);
+        gl.vertex_attrib_pointer_with_i32(shader.attrib_alpha_loc as u32, 1, GL::FLOAT, false, stride, 2 * 4);
+
+        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.attrib_position_loc as u32, 1);
+        gl.enable_vertex_attrib_array(shader.attrib_position_loc as u32);
+        instanced_arrays_ext.vertex_attrib_divisor_angle(shader.attrib_alpha_loc as u32, 1);
+        gl.enable_vertex_attrib_array(shader.attrib_alpha_loc as u32);
+
+        instanced_arrays_ext.draw_arrays_instanced_angle(
+            GL::TRIANGLE_FAN,
+            0,   // offset
+            4,   // num vertices per instance
+            self.particle_buf_active_len as i32,  // num instances
+        )?;
+
+        Ok(())
     }
 
     fn render_velocity_field(&self, ctx: &web_sys::CanvasRenderingContext2d) {
@@ -645,22 +889,423 @@ impl State {
         }
     }
 
+    fn render_velocity_field_gl(&self, gl: &GL) -> Result<(), JsValue> {
+        if self.params.show_velocity_field {
+            const CELL_SIZE: isize = 10;
+            const CELL_SIZE_F: f64 = CELL_SIZE as f64;
+            const VELOCITY_SCALE: f64 = 1e3;
+            const MAX_VELOCITY: f64 = 1e-2;
+            let x_cells = self.shape.0 / CELL_SIZE;
+            let y_cells = self.shape.1 / CELL_SIZE;
+
+            let shader = self.assets.arrow_shader.as_ref().ok_or_else(
+                || JsValue::from_str("Could not find rect_shader"))?;
+            gl.use_program(Some(&shader.program));
+
+            gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+
+            let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+                * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
+            enable_buffer(gl, &self.assets.arrow_buffer, 2, shader.vertex_position);
+            for j in 0..y_cells {
+                for i in 0..x_cells {
+                    let (x, y) = (i as f64, j as f64);
+                    let idx = self.shape.idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                    let (vx, vy) = (self.vx[idx], self.vy[idx]);
+                    let length2 = vx * vx + vy * vy;
+                    let length = VELOCITY_SCALE * if MAX_VELOCITY * MAX_VELOCITY < length2 {
+                        MAX_VELOCITY
+                    } else {
+                        length2.sqrt()
+                    };
+
+                    let scale = Matrix4::from_nonuniform_scale(
+                        length as f32 / self.shape.0 as f32,
+                        -length as f32 / self.shape.1 as f32,
+                        1.
+                    );
+
+                    let rotation = Matrix4::from_angle_z(Rad(-vy.atan2(vx) as f32));
+
+                    let translation = Matrix4::from_translation(
+                        Vector3::new(
+                            (x * CELL_SIZE_F) as f32 / self.shape.0 as f32,
+                            (y * CELL_SIZE_F) as f32 / self.shape.1 as f32, 0.));
+
+                    gl.uniform_matrix4fv_with_f32_array(
+                        shader.transform_loc.as_ref(),
+                        false,
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale * rotation)),
+                    );
+
+                    gl.draw_arrays(GL::TRIANGLE_FAN, 0, 3);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn reset_particles(&mut self) {
         // Technically, this is a new allocation that we would want to avoid, but it happens only
         // when the user presses reset button.
         self.particles = new_particles(&mut self.xor128, self.shape);
     }
+
+
+    /// WebGL specific initializations
+    pub fn start_gl(&mut self, gl: &GL) -> Result<(), JsValue> {
+
+        self.assets.flow_tex = Some(gen_flow_texture(gl, &self.shape)?);
+
+        self.assets.particle_tex = Some(gen_particle_texture(gl)?);
+
+        self.assets.instanced_arrays_ext = gl.get_extension("ANGLE_instanced_arrays")
+            .unwrap_or(None).map(|v| v.unchecked_into::<AngleInstancedArrays>());
+        console_log!("WebGL Instanced arrays is {}", if self.assets.instanced_arrays_ext.is_some() {
+            "available"
+        } else {
+            "not available"
+        });
+
+        let vert_shader = compile_shader(
+            &gl,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec2 vertexData;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            void main() {
+                gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
+
+                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
+            }
+        "#,
+        )?;
+        let frag_shader = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+            uniform float alpha;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader)?;
+        gl.use_program(Some(&program));
+
+        let shader = ShaderBundle::new(&gl, program);
+
+        gl.active_texture(GL::TEXTURE0);
+
+        gl.uniform1i(shader.texture_loc.as_ref(), 0);
+        gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
+
+        gl.enable(GL::BLEND);
+        gl.blend_equation(GL::FUNC_ADD);
+        gl.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
+
+        self.assets.rect_shader = Some(shader);
+
+        let frag_shader_add = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+            uniform float alpha;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.r * alpha);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
+        let shader = ShaderBundle::new(&gl, program);
+        self.assets.particle_shader = Some(shader);
+
+        let vert_shader_instancing = compile_shader(
+            &gl,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec2 vertexData;
+            attribute vec2 position;
+            attribute float alpha;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            varying float alphaVar;
+
+            void main() {
+                mat4 centerize = mat4(
+                    4, 0, 0, 0,
+                    0, -4, 0, 0,
+                    0, 0, 4, 0,
+                    -1, 1, -1, 1);
+                gl_Position = centerize * (transform * vec4(vertexData.xy, 0.0, 1.0) + vec4(position.xy, 0.0, 1.0));
+                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
+                alphaVar = alpha;
+            }
+        "#,
+        )?;
+        let frag_shader_instancing = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+            varying float alphaVar;
+
+            uniform sampler2D texture;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = vec4(texColor.rgb, texColor.r * alphaVar);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader_instancing, &frag_shader_instancing)?;
+        let shader = ShaderBundle::new(&gl, program);
+        self.assets.particle_instancing_shader = Some(shader);
+
+        let frag_shader_flat = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            uniform float alpha;
+
+            void main() {
+                gl_FragColor = vec4(0.5, 0.5, 1., alpha);
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_flat)?;
+        let shader = ShaderBundle::new(&gl, program);
+        gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+        self.assets.arrow_shader = Some(shader);
+
+
+        let vert_shader = compile_shader(
+            &gl,
+            GL::VERTEX_SHADER,
+            r#"
+            attribute vec4 vertexData;
+            uniform mat4 transform;
+            uniform mat3 texTransform;
+            varying vec2 texCoords;
+            void main() {
+                gl_Position = vec4(vertexData.xy, 0.0, 1.0);
+
+                texCoords = (texTransform * vec3(vertexData.zw, 1.)).xy;
+            }
+        "#,
+        )?;
+        let frag_shader = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            varying vec2 texCoords;
+
+            uniform sampler2D texture;
+
+            void main() {
+                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
+                gl_FragColor = texColor;
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader)?;
+        gl.use_program(Some(&program));
+        self.assets.trail_shader = Some(ShaderBundle::new(&gl, program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.uniform1i(
+            self.assets
+                .trail_shader
+                .as_ref()
+                .and_then(|s| s.texture_loc.as_ref()),
+            0,
+        );
+
+        self.assets.trail_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+
+        self.assets.rect_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
+        let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
+        vertex_buffer_data(&gl, &rect_vertices);
+
+        self.assets.arrow_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.arrow_buffer.as_ref());
+        let arrow_vertices: [f32; 6] = [1., 0., -1., -0.2, -1., 0.2];
+        vertex_buffer_data(&gl, &arrow_vertices);
+
+        self.assets.particle_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
+        gl.buffer_data_with_i32(
+            GL::ARRAY_BUFFER,
+            (PARTICLE_COUNT * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
+            GL::DYNAMIC_DRAW
+        );
+
+        gl.clear_color(0.0, 0.2, 0.5, 1.0);
+
+        Ok(())
+    }
+
+    pub fn draw_tex(
+        &self,
+        gl: &GL,
+        // texture: &WebGlTexture,
+    ) -> Result<(), JsValue> {
+        let shader = self.assets.rect_shader.as_ref()
+            .ok_or_else(|| JsValue::from_str("Failed to load rect_shader"))?;
+        gl.use_program(Some(&shader.program));
+
+        gl.uniform_matrix4fv_with_f32_array(
+            shader.transform_loc.as_ref(),
+            false,
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&Matrix4::from_nonuniform_scale(1., -1., 1.)),
+        );
+
+        gl.uniform_matrix3fv_with_f32_array(
+            shader.tex_transform_loc.as_ref(),
+            false,
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(
+                // &Matrix3::from_scale(1.)
+                &Matrix3::from_nonuniform_scale(
+                    self.shape.0 as f32 / ceil_pow2(self.shape.0) as f32,
+                    self.shape.1 as f32 / ceil_pow2(self.shape.1) as f32,
+                ),
+            )
+        );
+
+        enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+        gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+
+        Ok(())
+    }
+
+    fn put_image_gl(&self, gl: &GL, data: &[u8]) -> Result<(), JsValue> {
+        gl.use_program(Some(&self.assets.rect_shader.as_ref().ok_or_else(
+            || JsValue::from_str("Could not find rect_shader"))?.program));
+
+        gl.active_texture(GL::TEXTURE0);
+        gl.bind_texture(GL::TEXTURE_2D, self.assets.flow_tex.as_ref());
+
+        let level = 0;
+        let src_format = GL::RGBA;
+        let src_type = GL::UNSIGNED_BYTE;
+        gl.tex_sub_image_2d_with_i32_and_i32_and_u32_and_type_and_opt_u8_array(
+            GL::TEXTURE_2D,
+            level,
+            0,
+            0,
+            self.shape.0 as i32,
+            self.shape.1 as i32,
+            src_format,
+            src_type,
+            Some(data),
+        )?;
+
+        self.draw_tex(gl)?;
+
+        if self.params.particles {
+            if self.assets.instanced_arrays_ext.is_some() {
+                self.render_particles_gl_instancing(gl)?;
+            } else {
+                self.render_particles_gl(gl)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+trait Renderer {
+    fn is_webgl(&self) -> bool;
+    fn start(&self, _state: &mut State) -> Result<(), JsValue> {
+        Ok(())
+    }
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue>;
+}
+
+struct CanvasRenderer {
+    ctx: CanvasRenderingContext2d,
+}
+
+impl Renderer for CanvasRenderer {
+    fn is_webgl(&self) -> bool {
+        false
+    }
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
+        let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+            wasm_bindgen::Clamped(data), state.shape.0 as u32, state.shape.1 as u32).unwrap();
+        if state.params.particles {
+            state.render_particles(data);
+        }
+        self.ctx.put_image_data(&image_data, 0., 0.)?;
+        state.render_velocity_field(&self.ctx);
+        Ok(())
+    }
+}
+
+struct WebGLRenderer {
+    gl: GL,
+}
+
+impl Renderer for WebGLRenderer {
+    fn is_webgl(&self) -> bool {
+        true
+    }
+    fn start(&self, state: &mut State) -> Result<(), JsValue> {
+        state.start_gl(&self.gl)
+    }
+    fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
+        self.gl.clear(GL::COLOR_BUFFER_BIT);
+        state.put_image_gl(&self.gl, &data)?;
+        state.render_velocity_field_gl(&self.gl)?;
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]
-pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
+pub fn cfd_canvas(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
+    cfd_temp(width, height, CanvasRenderer{ ctx }, callback)
+}
+
+#[wasm_bindgen]
+pub fn cfd_webgl(width: usize, height: usize, gl: GL, callback: js_sys::Function) -> Result<(), JsValue> {
+    cfd_temp(width, height, WebGLRenderer{ gl }, callback)
+}
+
+fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, callback: js_sys::Function) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut data = vec![0u8; 4 * width * height];
 
     let mut state = State::new(width, height);
 
-    state.render(&mut data);
+    renderer.start(&mut state)?;
+
+    state.render_fluid(&mut data);
 
     let func = Rc::new(RefCell::new(None));
     let g = func.clone();
@@ -680,8 +1325,8 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
         // let mut div = vec![0f64; width * height];
         // divergence(&Vx, &Vy, (width, height), |(x, y), v| div[ix(x as i32, y as i32)] = v.abs());
 
-        let average = state.vx.iter().zip(state.vy.iter())
-            .fold(0f64, |acc, v| acc.max((v.0 * v.0 + v.1 * v.1).sqrt()));
+        // let average = state.vx.iter().zip(state.vy.iter())
+        //     .fold(0f64, |acc, v| acc.max((v.0 * v.0 + v.1 * v.1).sqrt()));
 
         // console_log!("frame {}, density sum {:.5e}, cen: {:.5e} maxvelo: {:.5e} mouse {:?}",
         //     i, average,
@@ -709,16 +1354,22 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
 
         for _ in 0..state.params.skip_frames {
             state.fluid_step();
-            state.particle_step();
+            state.particle_step(renderer.is_webgl());
         }
 
-        state.render(&mut data);
+        state.render_fluid(&mut data);
 
-        let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut data), width as u32, height as u32).unwrap();
-        ctx.put_image_data(&image_data, 0., 0.)?;
-        state.render_velocity_field(&ctx);
+        renderer.render(&state, &mut data)?;
 
-        let callback_ret = callback.call1(&window(), &JsValue::from(average)).unwrap_or(JsValue::from(true));
+        let particle_vec = state.particles.iter()
+        .fold(vec![], |mut acc, p| {
+            acc.push(p.position.0);
+            acc.push(p.position.1);
+            acc
+        });
+        let buf = js_sys::Float64Array::from(&particle_vec as &[f64]);
+
+        let callback_ret = callback.call1(&window(), &JsValue::from(buf)).unwrap_or(JsValue::from(true));
         let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
             .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
@@ -821,4 +1472,89 @@ pub fn cfd(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, 
     request_animation_frame(g.borrow().as_ref().unwrap());
 
     Ok(())
+}
+
+fn compile_shader(context: &GL, shader_type: u32, source: &str) -> Result<WebGlShader, String> {
+    let shader = context
+        .create_shader(shader_type)
+        .ok_or_else(|| String::from("Unable to create shader object"))?;
+    context.shader_source(&shader, source);
+    context.compile_shader(&shader);
+
+    if context
+        .get_shader_parameter(&shader, GL::COMPILE_STATUS)
+        .as_bool()
+        .unwrap_or(false)
+    {
+        Ok(shader)
+    } else {
+        Err(context
+            .get_shader_info_log(&shader)
+            .unwrap_or_else(|| String::from("Unknown error creating shader")))
+    }
+}
+
+fn link_program(
+    context: &GL,
+    vert_shader: &WebGlShader,
+    frag_shader: &WebGlShader,
+) -> Result<WebGlProgram, String> {
+    let program = context
+        .create_program()
+        .ok_or_else(|| String::from("Unable to create shader object"))?;
+
+    context.attach_shader(&program, vert_shader);
+    context.attach_shader(&program, frag_shader);
+    context.link_program(&program);
+
+    if context
+        .get_program_parameter(&program, GL::LINK_STATUS)
+        .as_bool()
+        .unwrap_or(false)
+    {
+        Ok(program)
+    } else {
+        Err(context
+            .get_program_info_log(&program)
+            .unwrap_or_else(|| String::from("Unknown error creating program object")))
+    }
+}
+
+pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
+    // Note that `Float32Array::view` is somewhat dangerous (hence the
+    // `unsafe`!). This is creating a raw view into our module's
+    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
+    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
+    // causing the `Float32Array` to be invalid.
+    //
+    // As a result, after `Float32Array::view` we have to be very careful not to
+    // do any memory allocations before it's dropped.
+    unsafe {
+        let vert_array = js_sys::Float32Array::view(vertices);
+
+        context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
+    };
+}
+
+
+pub fn vertex_buffer_sub_data(context: &GL, vertices: &[f32]) {
+    // Note that `Float32Array::view` is somewhat dangerous (hence the
+    // `unsafe`!). This is creating a raw view into our module's
+    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
+    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
+    // causing the `Float32Array` to be invalid.
+    //
+    // As a result, after `Float32Array::view` we have to be very careful not to
+    // do any memory allocations before it's dropped.
+    unsafe {
+        let vert_array = js_sys::Float32Array::view(vertices);
+
+        context.buffer_sub_data_with_i32_and_array_buffer_view(GL::ARRAY_BUFFER, 0, &vert_array);
+    };
+}
+
+pub fn enable_buffer(gl: &GL, buffer: &Option<WebGlBuffer>, elements: i32, vertex_position: u32) {
+    gl.bind_buffer(GL::ARRAY_BUFFER, buffer.as_ref());
+    gl.vertex_attrib_pointer_with_i32(vertex_position, elements, GL::FLOAT, false, 0, 0);
+    gl.enable_vertex_attrib_array(vertex_position);
 }

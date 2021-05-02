@@ -13,6 +13,7 @@ wasm-bindgen = "0.2.67"
 js-sys = ""
 console_error_panic_hook = "0.1.6"
 libm = "0.1.4"
+cgmath = "0.18.0"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-Oz", "--enable-mutable-globals"]
@@ -21,6 +22,12 @@ wasm-opt = ["-Oz", "--enable-mutable-globals"]
 version = "0.3.4"
 features = [
     'CanvasRenderingContext2d',
+    'WebGlBuffer',
+    'WebGlRenderingContext',
+    'WebGlProgram',
+    'WebGlShader',
+    'WebGlUniformLocation',
+    'WebGlTexture',
     'Element',
     'HtmlElement',
     'HtmlCanvasElement',

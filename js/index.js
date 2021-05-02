@@ -1,13 +1,42 @@
 import("../pkg/index.js").catch(console.error).then(run);
 
 async function run(module) {
-  const { cfd } = module;
+  const { cfd_canvas, cfd_webgl } = module;
 
-  const canvasScale = 2.;
-  const canvas = document.getElementById('canvas');
-  const canvasSize = canvas.getBoundingClientRect();
-  canvas.style.width = canvasSize.width * canvasScale + "px";
-  canvas.style.height = canvasSize.height * canvasScale + "px";
+  const canvasContainer = document.getElementById("canvasContainer");
+  let canvasScale = 1.;
+  let pixelScale = 4.;
+
+  let canvas;
+  let canvasSize;
+
+  let useWebGL = true;
+  let [width, height] = [200, 200];
+  let pendingRestart = false;
+
+  function setUseWebGL(value){
+    useWebGL = value;
+    [pixelScale, canvasScale] = useWebGL ? [1., 4] : [4., 1.];
+    resizeCanvas();
+    pendingRestart = true;
+  }
+
+  function resizeCanvas(){
+    if(canvas)
+      canvasContainer.removeChild(canvas);
+    canvas = document.createElement("canvas");
+    canvasContainer.appendChild(canvas);
+    canvas.setAttribute("width", width * canvasScale);
+    canvas.setAttribute("height", height * canvasScale);
+    canvas.style.width = width * canvasScale * pixelScale + "px";
+    canvas.style.height = height * canvasScale * pixelScale + "px";
+    canvasSize = canvas.getBoundingClientRect();
+    canvas.addEventListener("mousemove", (event) => {
+      params.mousePos = [event.offsetX / canvasScale / pixelScale, event.offsetY / canvasScale / pixelScale];
+    });
+  }
+
+  setUseWebGL(true);
 
   let params = {
     deltaTime: 1.0,
@@ -35,7 +64,6 @@ async function run(module) {
     projIter: 10,
     mousePos: undefined,
   };
-  const ctx = canvas.getContext('2d');
 
   const animateCheckbox = document.getElementById("animate");
   const sliderUpdater = [];
@@ -87,6 +115,7 @@ async function run(module) {
     radioButton.addEventListener("click", update);
     return radioButton;
   }
+  const useWebGLCheck = checkboxInit("useWebGL", setUseWebGL);
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => params.skipFrames = value);
   const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value, true);
@@ -121,29 +150,44 @@ async function run(module) {
     resetParticles = true;
   })
 
-  canvas.addEventListener("mousemove", (event) => {
-      params.mousePos = [event.offsetX / canvasScale, event.offsetY / canvasScale];
-  })
-
-  var label = document.getElementById('label');
+  const label = document.getElementById('label');
 
   function startAnimation(){
     console.time('Rendering in Rust')
     try{
-    //   deserialize_string(yamlText, canvasSize.width, canvasSize.height,
-        cfd(canvasSize.width, canvasSize.height, ctx,
-            (average) => {
-                // ctx.putImageData(data, 0, 0);
-                // label.innerHTML = average;
-                const animateCheckbox = document.getElementById("animate");
-                const ret = {
-                    terminate: !animateCheckbox.checked,
-                    ...params,
-                    resetParticles,
-                };
-                resetParticles = false;
-                return ret;
-            });
+      const callback = (particles) => {
+        // ctx.lineWidth = 1.;
+        // ctx.strokeStyle = "#ffffff";
+        // ctx.beginPath();
+        // for(let i = 0; i < particles.length / 2; i++){
+        //   ctx.moveTo(particles[i * 2], particles[i * 2 + 1]);
+        //   ctx.lineTo(particles[i * 2], particles[i * 2 + 1] + 1);
+        // }
+        // ctx.stroke();
+        // ctx.putImageData(data, 0, 0);
+          label.innerHTML = particles.buffer;
+          const animateCheckbox = document.getElementById("animate");
+          const ret = {
+              terminate: !animateCheckbox.checked || pendingRestart,
+              ...params,
+              resetParticles,
+          };
+          resetParticles = false;
+          if(pendingRestart){
+            setTimeout(startAnimation, 0);
+            pendingRestart = false;
+          }
+          return ret;
+      };
+
+      if(useWebGL){
+        const ctx = canvas.getContext('webgl');
+        cfd_webgl(width, height, ctx, callback);
+      }
+      else{
+        const ctx = canvas.getContext('2d');
+        cfd_canvas(width, height, ctx, callback);
+      }
     }
     catch(e){
         console.log("Rendering error: " + e);
