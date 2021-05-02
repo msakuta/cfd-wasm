@@ -309,7 +309,7 @@ struct Particle {
 }
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
-    (0..1000).map(|_| Particle {
+    (0..PARTICLE_COUNT).map(|_| Particle {
         position: ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64),
         history: vec![],
         history_buf: vec![],
@@ -410,6 +410,7 @@ struct Params{
     boundary_x: BoundaryCondition,
 }
 
+const PARTICLE_COUNT: usize = 1000;
 const PARTICLE_SIZE: f32 = 0.75;
 const PARTICLE_MAX_TRAIL_LEN: usize = 10;
 
@@ -1160,7 +1161,7 @@ impl State {
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         gl.buffer_data_with_i32(
             GL::ARRAY_BUFFER,
-            (self.particles.len() * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
+            (PARTICLE_COUNT * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
             GL::DYNAMIC_DRAW
         );
 
