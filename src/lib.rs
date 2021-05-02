@@ -406,6 +406,7 @@ struct Params{
     dye_from_obstacle: bool,
     particles: bool,
     particle_trails: usize,
+    redistribute_particles: bool,
     boundary_y: BoundaryCondition,
     boundary_x: BoundaryCondition,
 }
@@ -476,6 +477,7 @@ impl State {
             dye_from_obstacle: true,
             particles: true,
             particle_trails: 0,
+            redistribute_particles: true,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         };
@@ -610,11 +612,75 @@ impl State {
         }
     }
 
+    /// Redistirbute particles from concentrated area to sparse area, because the simulation tend to
+    /// gather particles to certain location.
+    ///
+    /// The way it works is that it collects the local density information by splitting the entire space into grid cells
+    /// and count particles in each cell, and then move particles from the cell with the highest density to
+    /// less dense than a threshold cell.
+    fn particle_redistribute(&mut self) {
+        const GRID_SIZE: usize = 10;
+        const GRID_ISIZE: isize = GRID_SIZE as isize;
+        // Because expected density for each cell depends on the size of the simulation space and particle count, we
+        // calculate the threshold from the parameters. Probably we should adjust GRID_SIZE instead.
+        let min_density: usize = PARTICLE_COUNT / (self.shape.0 * self.shape.1 / GRID_ISIZE / GRID_ISIZE) as usize / 2;
+
+        fn grid_position(particle: &Particle) -> (usize, usize) {
+            let x = particle.position.0 as usize / GRID_SIZE;
+            let y = particle.position.1 as usize / GRID_SIZE;
+            (x, y)
+        }
+
+        let grid_columns = self.shape.0 as usize / GRID_SIZE;
+        let grid_rows = self.shape.1 as usize / GRID_SIZE;
+        let mut grid = vec![0usize; grid_columns * grid_rows];
+        for particle in &self.particles {
+            let (x, y) = grid_position(particle);
+            grid[x + y * grid_columns] += 1;
+        }
+        // let mut global_moved = 0;
+        // Need to avoid iterating over grid object in order to avoid borrow checker
+        for i in 0..grid.len() {
+            let mut moved = 0;
+            while grid[i] < min_density && moved < min_density {
+                let dst_cell_position = (i % grid_columns, i / grid_columns);
+                let mut added_from = None;
+                if let Some(max_cell) = grid.iter().enumerate().max_by_key(|v| v.1) {
+                    let src_cell_position = (max_cell.0 % grid_columns, max_cell.0 / grid_columns);
+                    if let Some(particle) = self.particles.iter_mut().find(|particle| src_cell_position == grid_position(particle)) {
+                        particle.position = (
+                            (self.xor128.nexti() as usize % GRID_SIZE + dst_cell_position.0 * GRID_SIZE) as f64,
+                            (self.xor128.nexti() as usize % GRID_SIZE + dst_cell_position.1 * GRID_SIZE) as f64,
+                        );
+                        particle.history.clear();
+                        particle.history_buf.clear();
+                        added_from = Some(max_cell.0);
+                    }
+                }
+
+                if let Some(j) = added_from {
+                    grid[i] += 1;
+                    grid[j] -= 1;
+                    // global_moved += 1;
+                    moved += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        // console_log!("grid {} x {}, max {:?} min {:?} min_density: {}, global_moved {}",
+        //     grid_rows, grid_columns, grid.iter().max(), grid.iter().min(), min_density, global_moved);
+    }
+
     fn particle_step(&mut self, use_webgl: bool) {
 
         let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 3;
         if self.particle_buf.len() < desired_len {
             self.particle_buf.resize(desired_len, 0.);
+        }
+
+        if self.params.redistribute_particles {
+            self.particle_redistribute();
         }
 
         let mut idx = 0;
@@ -1445,6 +1511,7 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
         assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
         assign_check("particles", &mut |value| state.params.particles = value);
         assign_usize("particleTrails", &mut |value| state.params.particle_trails = value);
+        assign_check("redistributeParticles", &mut |value| state.params.redistribute_particles = value);
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
