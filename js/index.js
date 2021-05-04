@@ -135,7 +135,11 @@ async function run(module) {
         writer(radioButton.value);
     }
     radioButton.addEventListener("click", update);
-    return radioButton;
+    return {elem: radioButton, update: value => {
+      radioButton.checked = value;
+      if(value)
+        writer(radioButton.value);
+    }};
   }
   const useWebGLCheck = checkboxInit("useWebGL", setUseWebGL);
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
@@ -174,7 +178,6 @@ async function run(module) {
   })
 
   function callInput(slider, value){
-    slider.elem.value = value;
     slider.update(value);
   }
 
@@ -184,8 +187,10 @@ async function run(module) {
     callInput(diffSlider, 1e-7);
     callInput(densitySlider, 50.);
     callInput(mouseFlowCheck, true);
+    callInput(obstacleCheck, false);
     callInput(temperatureCheck, false);
     callInput(halfHeatSourceCheck, false);
+    callInput(fixedXCheck, true);
   };
 
   const buttonHeat = document.getElementById("buttonHeat");
@@ -195,8 +200,22 @@ async function run(module) {
     callInput(diffSlider, 2e-5);
     callInput(densitySlider, 50.);
     callInput(mouseFlowCheck, false);
+    callInput(obstacleCheck, false);
     callInput(temperatureCheck, true);
     callInput(halfHeatSourceCheck, true);
+    callInput(fixedXCheck, true);
+  };
+
+  const buttonKarman = document.getElementById("buttonKarman");
+  buttonKarman.onclick = () => {
+    callInput(viscSlider, 1e-7);
+    callInput(diffSlider, 1e-7);
+    callInput(densitySlider, 50.);
+    callInput(mouseFlowCheck, false);
+    callInput(obstacleCheck, true);
+    callInput(temperatureCheck, false);
+    callInput(halfHeatSourceCheck, false);
+    callInput(flowXCheck, true);
   };
 
   const label = document.getElementById('label');
