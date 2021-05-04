@@ -42,7 +42,7 @@ async function run(module) {
     deltaTime: 1.0,
     skipFrames: 1,
     visc: 1e-7,
-    diff: 0.,
+    diff: 1e-7,
     density: 50.0,
     decay: 0.01,
     mouseFlowSpeed: 0.75,
@@ -67,25 +67,26 @@ async function run(module) {
   };
 
   const animateCheckbox = document.getElementById("animate");
-  const sliderUpdater = [];
   function sliderInit(sliderId, labelId, writer, logarithmic=false){
     const slider = document.getElementById(sliderId);
     const label = document.getElementById(labelId);
     label.innerHTML = slider.value;
 
-    const update = (_event) => {
+    const sliderStats = () => {
+      const [minp, maxp] = ["min", "max"].map(attr => parseFloat(slider.getAttribute(attr)));
+      if(minp <= 0){
+        throw "Minimum value for logarithmic slider must not be 0";
+      }
+      const [minv, maxv] = [minp, maxp].map(Math.log);
+      // calculate adjustment factor
+      const scale = (maxv-minv) / (maxp-minp);
+      return {minp, maxp, minv, maxv, scale};
+    };
+
+    const updateFromInput = (_event) => {
       let value;
       if(logarithmic){
-        const minp = parseFloat(slider.getAttribute("min"));
-        const maxp = parseFloat(slider.getAttribute("max"));
-
-        // The result should be between 100 an 10000000
-        const minv = Math.log(minp);
-        const maxv = Math.log(maxp);
-
-        // calculate adjustment factor
-        const scale = (maxv-minv) / (maxp-minp);
-
+        const {minp, scale} = sliderStats();
         value = Math.exp(minv + scale*(parseFloat(slider.value) - minp));
         label.innerHTML = value.toFixed(8);
       }
@@ -93,11 +94,28 @@ async function run(module) {
         value = parseFloat(slider.value);
         label.innerHTML = value;
       }
-      writer(parseFloat(slider.value));
+      writer(value);
     }
-    slider.addEventListener("input", update);
-    sliderUpdater.push(update);
-    return slider;
+    const updateFromValue = (value) => {
+      if(logarithmic){
+        const {minp, scale, minv} = sliderStats();
+
+        // Inverse of updateFromInput
+        slider.value = (Math.log(value) - minv) / scale + minp;
+        label.innerHTML = value.toFixed(8);
+      }
+      else{
+        slider.value = value;
+        label.innerHTML = value;
+      }
+      writer(value);
+    };
+    if(logarithmic){
+      // Update the UI according to logarithmic scale even before the user touches the slider
+      updateFromValue(parseFloat(slider.value));
+    }
+    slider.addEventListener("input", updateFromInput);
+    return {elem: slider, update: updateFromValue};
   }
   function checkboxInit(checkboxId, writer){
     const checkbox = document.getElementById(checkboxId);
@@ -105,7 +123,10 @@ async function run(module) {
       writer(checkbox.checked);
     }
     checkbox.addEventListener("click", update);
-    return checkbox;
+    return {elem: checkbox, update: value => {
+      checkbox.checked = value;
+      writer(value);
+    }};
   }
   function radioButtonInit(radioButtonId, writer){
     const radioButton = document.getElementById(radioButtonId);
@@ -119,7 +140,7 @@ async function run(module) {
   const useWebGLCheck = checkboxInit("useWebGL", setUseWebGL);
   const deltaTimeSlider = sliderInit("deltaTime", "deltaTimeLabel", value => params.deltaTime = value);
   const skipFramesSlider = sliderInit("skipFrames", "skipFramesLabel", value => params.skipFrames = value);
-  const fSlider = sliderInit("visc", "viscLabel", value => params.visc = value, true);
+  const viscSlider = sliderInit("visc", "viscLabel", value => params.visc = value, true);
   const diffSlider = sliderInit("diff", "diffLabel", value => params.diff = value, true);
   const densitySlider = sliderInit("density", "densityLabel", value => params.density = value);
   const decaySlider = sliderInit("decay", "decayLabel", value => params.decay = value);
@@ -151,6 +172,32 @@ async function run(module) {
   buttonResetParticles.addEventListener("click", (event) => {
     resetParticles = true;
   })
+
+  function callInput(slider, value){
+    slider.elem.value = value;
+    slider.update(value);
+  }
+
+  const buttonDefault = document.getElementById("buttonDefault");
+  buttonDefault.onclick = () => {
+    callInput(viscSlider, 1e-7);
+    callInput(diffSlider, 1e-7);
+    callInput(densitySlider, 50.);
+    callInput(mouseFlowCheck, true);
+    callInput(temperatureCheck, false);
+    callInput(halfHeatSourceCheck, false);
+  };
+
+  const buttonHeat = document.getElementById("buttonHeat");
+  buttonHeat.onclick = () => {
+    // Heat Convection is much more stable with very viscous fluid
+    callInput(viscSlider, 2e-5);
+    callInput(diffSlider, 2e-5);
+    callInput(densitySlider, 50.);
+    callInput(mouseFlowCheck, false);
+    callInput(temperatureCheck, true);
+    callInput(halfHeatSourceCheck, true);
+  };
 
   const label = document.getElementById('label');
 
