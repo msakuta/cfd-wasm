@@ -83,10 +83,15 @@ async function run(module) {
       return {minp, maxp, minv, maxv, scale};
     };
 
+    const paramsContainer = document.getElementById("paramsContainer");
+    document.getElementById("showParams").addEventListener("click", event => {
+      paramsContainer.classList = event.target.checked ? "" : "hidden";
+    });
+
     const updateFromInput = (_event) => {
       let value;
       if(logarithmic){
-        const {minp, scale} = sliderStats();
+        const {minp, minv, scale} = sliderStats();
         value = Math.exp(minv + scale*(parseFloat(slider.value) - minp));
         label.innerHTML = value.toFixed(8);
       }
