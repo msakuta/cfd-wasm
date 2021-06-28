@@ -51,6 +51,7 @@ async function run(module) {
     halfHeatSource: false,
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
+    gamma: 1.0,
     mouseFlow: true,
     showVelocity: true,
     showVelocityField: false,
@@ -164,6 +165,7 @@ async function run(module) {
   const halfHeatSourceCheck = checkboxInit("halfHeatSource", value => params.halfHeatSource = value);
   const heatExchangeRateSlider = sliderInit("heatExchangeRate", "heatExchangeRateLabel", value => params.heatExchangeRate = value);
   const heatBuoyancySlider = sliderInit("heatBuoyancy", "heatBuoyancyLabel", value => params.heatBuoyancy = value, true);
+  const gammaSlider = sliderInit("gamma", "gammaLabel", value => params.gamma = value, true);
   const particlesCheck = checkboxInit("particles", value => params.particles = value);
   const particleTrailsSlider = sliderInit("particleTrails", "particleTrailsLabel", value => params.particleTrails = value);
   const redistributeParticlesCheck = checkboxInit("redistributeParticles", value => params.redistributeParticles = value);

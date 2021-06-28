@@ -400,6 +400,7 @@ struct Params{
     heat_exchange_rate: f64,
     heat_buoyancy: f64,
     mouse_flow: bool,
+    gamma: f32,
     show_velocity: bool,
     show_velocity_field: bool,
     obstacle: bool,
@@ -471,6 +472,7 @@ impl State {
             heat_exchange_rate: 0.2,
             heat_buoyancy: 0.05,
             mouse_flow: true,
+            gamma: 1.0,
             show_velocity: true,
             show_velocity_field: false,
             obstacle: false,
@@ -1059,10 +1061,11 @@ impl State {
 
             uniform sampler2D texture;
             uniform float alpha;
+            uniform float gamma;
 
             void main() {
                 vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = vec4(texColor.rgb, texColor.a * alpha);
+                gl_FragColor = vec4(pow(texColor.rgb, vec3(gamma)), texColor.a * alpha);
             }
         "#,
         )?;
@@ -1101,6 +1104,7 @@ impl State {
         )?;
         let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
         let shader = ShaderBundle::new(&gl, program);
+        gl.uniform1f(shader.gamma_loc.as_ref(), 0.5);
         self.assets.particle_shader = Some(shader);
 
         let vert_shader_instancing = compile_shader(
@@ -1244,6 +1248,8 @@ impl State {
         let shader = self.assets.rect_shader.as_ref()
             .ok_or_else(|| JsValue::from_str("Failed to load rect_shader"))?;
         gl.use_program(Some(&shader.program));
+
+        gl.uniform1f(shader.gamma_loc.as_ref(), self.params.gamma);
 
         gl.uniform_matrix4fv_with_f32_array(
             shader.transform_loc.as_ref(),
@@ -1505,6 +1511,7 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
         assign_state("heatExchangeRate", &mut |value| state.params.heat_exchange_rate = value);
         assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
+        assign_state("gamma", &mut |value| state.params.gamma = value as f32);
         assign_check("showVelocity", &mut |value| state.params.show_velocity = value);
         assign_check("showVelocityField", &mut |value| state.params.show_velocity_field = value);
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
