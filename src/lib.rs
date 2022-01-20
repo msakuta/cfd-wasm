@@ -2,13 +2,15 @@ extern crate console_error_panic_hook;
 extern crate libm;
 use std::panic;
 
+use cgmath::{Matrix3, Matrix4, Rad, Vector3};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, WebGlBuffer, WebGlProgram,
-    WebGlRenderingContext as GL, WebGlShader, WebGlTexture};
-use cgmath::{Matrix3, Matrix4, Vector3, Rad};
+use web_sys::{
+    CanvasRenderingContext2d, WebGlBuffer, WebGlProgram, WebGlRenderingContext as GL, WebGlShader,
+    WebGlTexture,
+};
 
 use shader_bundle::ShaderBundle;
 
@@ -27,7 +29,6 @@ macro_rules! console_log {
     }
 }
 
-
 mod shader_bundle;
 
 #[wasm_bindgen]
@@ -39,11 +40,24 @@ extern "C" {
     fn vertex_attrib_array_divisor_angle(this: &AngleInstancedArrays) -> i32;
 
     #[wasm_bindgen(method, catch, js_name = drawArraysInstancedANGLE)]
-    fn draw_arrays_instanced_angle(this: &AngleInstancedArrays, mode: u32, first: i32, count: i32, primcount: i32) -> Result<(), JsValue>;
+    fn draw_arrays_instanced_angle(
+        this: &AngleInstancedArrays,
+        mode: u32,
+        first: i32,
+        count: i32,
+        primcount: i32,
+    ) -> Result<(), JsValue>;
 
     // TODO offset should be i64
     #[wasm_bindgen(method, catch, js_name = drawElementsInstancedANGLE)]
-    fn draw_elements_instanced_angle(this: &AngleInstancedArrays, mode: u32, count: i32, type_: u32, offset: i32, primcount: i32) -> Result<(), JsValue>;
+    fn draw_elements_instanced_angle(
+        this: &AngleInstancedArrays,
+        mode: u32,
+        count: i32,
+        type_: u32,
+        offset: i32,
+        primcount: i32,
+    ) -> Result<(), JsValue>;
 
     #[wasm_bindgen(method, js_name = vertexAttribDivisorANGLE)]
     fn vertex_attrib_divisor_angle(this: &AngleInstancedArrays, index: u32, divisor: u32);
@@ -70,14 +84,14 @@ fn _body() -> web_sys::HtmlElement {
 }
 
 #[derive(Clone, Copy)]
-struct Xor128{
-    x: u32
+struct Xor128 {
+    x: u32,
 }
 
-impl Xor128{
-    fn new(seed: u32) -> Self{
-        let mut ret = Xor128{x: 2463534242};
-        if 0 < seed{
+impl Xor128 {
+    fn new(seed: u32) -> Self {
+        let mut ret = Xor128 { x: 2463534242 };
+        if 0 < seed {
             ret.x ^= (seed & 0xffffffff) >> 0;
             ret.nexti();
         }
@@ -85,7 +99,7 @@ impl Xor128{
         ret
     }
 
-    fn nexti(&mut self) -> u32{
+    fn nexti(&mut self) -> u32 {
         // We must bitmask and logical shift to simulate 32bit unsigned integer's behavior.
         // The optimizer is likely to actually make it uint32 internally (hopefully).
         // T = (I + L^a)(I + R^b)(I + L^c)
@@ -104,7 +118,6 @@ fn ceil_pow2(i: isize) -> isize {
     }
     1 << bit
 }
-
 
 trait Idx {
     fn idx(&self, x: isize, y: isize) -> usize;
@@ -138,34 +151,54 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
     // Edge cases
     if params.boundary_y == BoundaryCondition::Fixed {
         for i in 1..shape.0 - 1 {
-            x[shape.idx(i, 0  )] = if b == 2 { -x[shape.idx(i, 1  )] } else { x[shape.idx(i, 1  )] };
-            x[shape.idx(i, shape.1-1)] = if b == 2 { -x[shape.idx(i, shape.1-2)] } else { x[shape.idx(i, shape.1-2)] };
+            x[shape.idx(i, 0)] = if b == 2 {
+                -x[shape.idx(i, 1)]
+            } else {
+                x[shape.idx(i, 1)]
+            };
+            x[shape.idx(i, shape.1 - 1)] = if b == 2 {
+                -x[shape.idx(i, shape.1 - 2)]
+            } else {
+                x[shape.idx(i, shape.1 - 2)]
+            };
         }
     } else if let BoundaryCondition::Flow(f) = params.boundary_y {
         for i in 1..shape.0 - 1 {
-            x[shape.idx(i, 0  )] = if b == 2 { f } else { x[shape.idx(i, 1  )] };
-            x[shape.idx(i, shape.1-1)] = x[shape.idx(i, shape.1-2)];
+            x[shape.idx(i, 0)] = if b == 2 { f } else { x[shape.idx(i, 1)] };
+            x[shape.idx(i, shape.1 - 1)] = x[shape.idx(i, shape.1 - 2)];
         }
     }
     if params.boundary_x == BoundaryCondition::Fixed {
         for j in 1..shape.1 - 1 {
-            x[shape.idx(0  , j)] = if b == 1 { -x[shape.idx(1  , j)] } else { x[shape.idx(1  , j)] };
-            x[shape.idx(shape.0-1, j)] = if b == 1 { -x[shape.idx(shape.0-2, j)] } else { x[shape.idx(shape.0-2, j)] };
+            x[shape.idx(0, j)] = if b == 1 {
+                -x[shape.idx(1, j)]
+            } else {
+                x[shape.idx(1, j)]
+            };
+            x[shape.idx(shape.0 - 1, j)] = if b == 1 {
+                -x[shape.idx(shape.0 - 2, j)]
+            } else {
+                x[shape.idx(shape.0 - 2, j)]
+            };
         }
     } else if let BoundaryCondition::Flow(f) = params.boundary_x {
         for j in 1..shape.1 - 1 {
-            x[shape.idx(0  , j)] = if b == 1 {
-                if j < center.1 { f * 0.9 } else { f }
+            x[shape.idx(0, j)] = if b == 1 {
+                if j < center.1 {
+                    f * 0.9
+                } else {
+                    f
+                }
             } else {
-                x[shape.idx(1  , j)]
+                x[shape.idx(1, j)]
             };
-            x[shape.idx(shape.0-1, j)] = x[shape.idx(shape.0-2, j)];
+            x[shape.idx(shape.0 - 1, j)] = x[shape.idx(shape.0 - 2, j)];
         }
     }
 
     if params.obstacle {
-        for j in center.1-radius..center.1+radius {
-            for i in center.0-radius..center.0+radius {
+        for j in center.1 - radius..center.1 + radius {
+            for i in center.0 - radius..center.0 + radius {
                 let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
                 if dist2 < radius * radius {
                     x[shape.idx(i, j)] = 0.;
@@ -175,21 +208,23 @@ fn set_bnd(b: i32, x: &mut [f64], shape: Shape, params: &Params) {
     }
 
     // Corner cases (literally)
-    x[shape.idx(0, 0)]             = 0.5 * (x[shape.idx(1, 0)] + x[shape.idx(0, 1)]);
-    x[shape.idx(0, shape.1-1)]     = 0.5 * (x[shape.idx(1, shape.1-1)] + x[shape.idx(0, shape.1-2)]);
-    x[shape.idx(shape.0-1, 0)]     = 0.5 * (x[shape.idx(shape.0-2, 0)] + x[shape.idx(shape.0-1, 1)]);
-    x[shape.idx(shape.0-1, shape.1-1)] = 0.5 * (x[shape.idx(shape.0-2, shape.1-1)]
-                                                   + x[shape.idx(shape.0-1, shape.1-2)]);
+    x[shape.idx(0, 0)] = 0.5 * (x[shape.idx(1, 0)] + x[shape.idx(0, 1)]);
+    x[shape.idx(0, shape.1 - 1)] =
+        0.5 * (x[shape.idx(1, shape.1 - 1)] + x[shape.idx(0, shape.1 - 2)]);
+    x[shape.idx(shape.0 - 1, 0)] =
+        0.5 * (x[shape.idx(shape.0 - 2, 0)] + x[shape.idx(shape.0 - 1, 1)]);
+    x[shape.idx(shape.0 - 1, shape.1 - 1)] =
+        0.5 * (x[shape.idx(shape.0 - 2, shape.1 - 1)] + x[shape.idx(shape.0 - 1, shape.1 - 2)]);
 }
 
 fn get_range(shape: Shape, params: &Params) -> (isize, isize, isize, isize) {
     let (i0, i1) = match params.boundary_x {
-        BoundaryCondition::Fixed => (1, shape.0-1),
+        BoundaryCondition::Fixed => (1, shape.0 - 1),
         BoundaryCondition::Wrap => (0, shape.0),
         BoundaryCondition::Flow(_) => (1, shape.0),
     };
     let (j0, j1) = match params.boundary_y {
-        BoundaryCondition::Fixed => (1, shape.1-1),
+        BoundaryCondition::Fixed => (1, shape.1 - 1),
         BoundaryCondition::Wrap => (0, shape.1),
         BoundaryCondition::Flow(_) => (1, shape.1),
     };
@@ -200,30 +235,57 @@ fn get_range(shape: Shape, params: &Params) -> (isize, isize, isize, isize) {
 ///
 /// @param b ignored
 /// @param x Target field to be solved
-fn lin_solve(b: i32, x: &mut [f64], x0: &[f64], a: f64, c: f64, iter: usize, shape: Shape, params: &Params) {
+fn lin_solve(
+    b: i32,
+    x: &mut [f64],
+    x0: &[f64],
+    a: f64,
+    c: f64,
+    iter: usize,
+    shape: Shape,
+    params: &Params,
+) {
     let c_recip = 1.0 / c;
     let (ib, ie, jb, je) = get_range(shape, params);
     for _ in 0..iter {
         for j in jb..je {
             for i in ib..ie {
                 x[shape.idx(i, j)] = (x0[shape.idx(i, j)]
-                    + a*(x[shape.idx(i+1, j  )]
-                        +x[shape.idx(i-1, j  )]
-                        +x[shape.idx(i  , j+1)]
-                        +x[shape.idx(i  , j-1)]
-                    )) * c_recip;
+                    + a * (x[shape.idx(i + 1, j)]
+                        + x[shape.idx(i - 1, j)]
+                        + x[shape.idx(i, j + 1)]
+                        + x[shape.idx(i, j - 1)]))
+                    * c_recip;
             }
         }
         set_bnd(b, x, shape, params);
     }
 }
 
-fn diffuse(b: i32, x: &mut [f64], x0: &[f64], diff: f64, dt: f64, iter: usize, shape: Shape, params: &Params) {
+fn diffuse(
+    b: i32,
+    x: &mut [f64],
+    x0: &[f64],
+    diff: f64,
+    dt: f64,
+    iter: usize,
+    shape: Shape,
+    params: &Params,
+) {
     let a = dt * diff * (shape.0 - 2) as f64 * (shape.1 - 2) as f64;
     lin_solve(b, x, x0, a, 1. + 4. * a, iter, shape, params);
 }
 
-fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, shape: Shape, params: &Params) {
+fn advect(
+    b: i32,
+    d: &mut [f64],
+    d0: &[f64],
+    vx: &[f64],
+    vy: &[f64],
+    dt: f64,
+    shape: Shape,
+    params: &Params,
+) {
     let dtx = dt * (shape.0 - 2) as f64;
     let dty = dt * (shape.1 - 2) as f64;
     let (ib, ie, jb, je) = get_range(shape, params);
@@ -232,51 +294,63 @@ fn advect(b: i32, d: &mut [f64], d0: &[f64], vx: &[f64], vy: &[f64], dt: f64, sh
         let jfloat = j as f64;
         for i in ib..ie {
             let ifloat = i as f64;
-            let mut x    = ifloat - dtx * vx[shape.idx(i, j)];
+            let mut x = ifloat - dtx * vx[shape.idx(i, j)];
             if params.boundary_x == BoundaryCondition::Fixed {
-                if x < 0.5 { x = 0.5 };
-                if x > shape.0 as f64 + 0.5 { x = shape.0 as f64 + 0.5 };
+                if x < 0.5 {
+                    x = 0.5
+                };
+                if x > shape.0 as f64 + 0.5 {
+                    x = shape.0 as f64 + 0.5
+                };
             }
             let i0 = x.floor();
             let i1 = i0 + 1.0;
             let mut y = jfloat - dty * vy[shape.idx(i, j)];
             if params.boundary_y == BoundaryCondition::Fixed {
-                if y < 0.5 { y = 0.5 };
-                if y > shape.1 as f64 + 0.5 { y = shape.1 as f64 + 0.5 };
+                if y < 0.5 {
+                    y = 0.5
+                };
+                if y > shape.1 as f64 + 0.5 {
+                    y = shape.1 as f64 + 0.5
+                };
             }
             let j0 = y.floor();
-            let j1 = j0 + 1.0; 
-            
-            let s1 = x - i0; 
-            let s0 = 1.0 - s1; 
-            let t1 = y - j0; 
+            let j1 = j0 + 1.0;
+
+            let s1 = x - i0;
+            let s0 = 1.0 - s1;
+            let t1 = y - j0;
             let t0 = 1.0 - t1;
-            
+
             let i0i = i0 as isize;
             let i1i = i1 as isize;
             let j0i = j0 as isize;
             let j1i = j1 as isize;
-            
-            d[shape.idx(i, j)] = 
-                s0 * ( t0 * (d0[shape.idx(i0i, j0i)])
-                    +( t1 * (d0[shape.idx(i0i, j1i)])))
-            +s1 * ( t0 * (d0[shape.idx(i1i, j0i)])
-                    +( t1 * (d0[shape.idx(i1i, j1i)])));
+
+            d[shape.idx(i, j)] = s0
+                * (t0 * (d0[shape.idx(i0i, j0i)]) + (t1 * (d0[shape.idx(i0i, j1i)])))
+                + s1 * (t0 * (d0[shape.idx(i1i, j0i)]) + (t1 * (d0[shape.idx(i1i, j1i)])));
         }
     }
     set_bnd(b, d, shape, params);
 }
 
-fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter: usize, shape: Shape, params: &Params) {
+fn project(
+    vx: &mut [f64],
+    vy: &mut [f64],
+    p: &mut [f64],
+    div: &mut [f64],
+    iter: usize,
+    shape: Shape,
+    params: &Params,
+) {
     let (ib, ie, jb, je) = get_range(shape, params);
     for j in jb..je {
         for i in ib..ie {
-            div[shape.idx(i, j)] = -0.5*(
-                    vx[shape.idx(i+1, j  )]
-                    -vx[shape.idx(i-1, j  )]
-                    +vy[shape.idx(i  , j+1)]
-                    -vy[shape.idx(i  , j-1)]
-                ) / shape.0 as f64;
+            div[shape.idx(i, j)] = -0.5
+                * (vx[shape.idx(i + 1, j)] - vx[shape.idx(i - 1, j)] + vy[shape.idx(i, j + 1)]
+                    - vy[shape.idx(i, j - 1)])
+                / shape.0 as f64;
             p[shape.idx(i, j)] = 0.;
         }
     }
@@ -286,10 +360,10 @@ fn project(vx: &mut [f64], vy: &mut [f64], p: &mut [f64], div: &mut [f64], iter:
 
     for j in jb..je {
         for i in ib..ie {
-            vx[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i+1, j)]
-                                            -p[shape.idx(i-1, j)]) * shape.0 as f64;
-            vy[shape.idx(i, j)] -= 0.5 * (  p[shape.idx(i, j+1)]
-                                            -p[shape.idx(i, j-1)]) * shape.1 as f64;
+            vx[shape.idx(i, j)] -=
+                0.5 * (p[shape.idx(i + 1, j)] - p[shape.idx(i - 1, j)]) * shape.0 as f64;
+            vy[shape.idx(i, j)] -=
+                0.5 * (p[shape.idx(i, j + 1)] - p[shape.idx(i, j - 1)]) * shape.1 as f64;
         }
     }
     set_bnd(1, vx, shape, params);
@@ -309,11 +383,16 @@ struct Particle {
 }
 
 fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
-    (0..PARTICLE_COUNT).map(|_| Particle {
-        position: ((xor128.nexti() as isize % shape.0) as f64, (xor128.nexti() as isize % shape.1) as f64),
-        history: vec![],
-        history_buf: vec![],
-    }).collect::<Vec<_>>()
+    (0..PARTICLE_COUNT)
+        .map(|_| Particle {
+            position: (
+                (xor128.nexti() as isize % shape.0) as f64,
+                (xor128.nexti() as isize % shape.1) as f64,
+            ),
+            history: vec![],
+            history_buf: vec![],
+        })
+        .collect::<Vec<_>>()
 }
 
 /// Create a texture buffer, which could be filled by later texSubImage calls.
@@ -350,9 +429,12 @@ fn gen_particle_texture(context: &GL) -> Result<WebGlTexture, JsValue> {
     let mut image = [0u8; PARTICLE_TEXTURE_SIZE * PARTICLE_TEXTURE_SIZE];
     for i in 0..PARTICLE_TEXTURE_SIZE {
         for j in 0..PARTICLE_TEXTURE_SIZE {
-            let x = (i as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
-            let y = (j as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32 / PARTICLE_TEXTURE_HALF_SIZE as f32;
-            image[i * PARTICLE_TEXTURE_SIZE + j] = ((1. - (x * x + y * y).sqrt()).max(0.) * 255.) as u8;
+            let x = (i as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32
+                / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            let y = (j as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32
+                / PARTICLE_TEXTURE_HALF_SIZE as f32;
+            image[i * PARTICLE_TEXTURE_SIZE + j] =
+                ((1. - (x * x + y * y).sqrt()).max(0.) * 255.) as u8;
         }
     }
 
@@ -375,7 +457,6 @@ fn gen_particle_texture(context: &GL) -> Result<WebGlTexture, JsValue> {
     Ok(texture)
 }
 
-
 #[derive(Copy, Clone, PartialEq)]
 enum BoundaryCondition {
     Wrap,
@@ -384,7 +465,7 @@ enum BoundaryCondition {
 }
 
 #[derive(Copy, Clone)]
-struct Params{
+struct Params {
     delta_time: f64,
     skip_frames: u32,
     mouse_pos: [i32; 2],
@@ -517,14 +598,14 @@ impl State {
                 rect_buffer: None,
                 arrow_buffer: None,
                 particle_buffer: None,
-            }
+            },
         }
     }
 
     fn fluid_step(&mut self) {
-        let visc     = self.params.visc;
-        let diff     = self.params.diff;
-        let dt       = self.params.delta_time;
+        let visc = self.params.visc;
+        let diff = self.params.diff;
+        let dt = self.params.delta_time;
         let diffuse_iter = self.params.diffuse_iter;
         let project_iter = self.params.project_iter;
         let shape = self.shape;
@@ -540,66 +621,183 @@ impl State {
 
         // console_log!("diffusion: {} viscousity: {}", diff, visc);
 
-        diffuse(1, &mut self.vx0, &self.vx, visc, dt, diffuse_iter, shape, &self.params);
-        diffuse(2, &mut self.vy0, &self.vy, visc, dt, diffuse_iter, shape, &self.params);
+        diffuse(
+            1,
+            &mut self.vx0,
+            &self.vx,
+            visc,
+            dt,
+            diffuse_iter,
+            shape,
+            &self.params,
+        );
+        diffuse(
+            2,
+            &mut self.vy0,
+            &self.vy,
+            visc,
+            dt,
+            diffuse_iter,
+            shape,
+            &self.params,
+        );
 
         // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-        project(&mut self.vx0, &mut self.vy0, &mut self.work, &mut self.work2, project_iter, shape, &self.params);
+        project(
+            &mut self.vx0,
+            &mut self.vy0,
+            &mut self.work,
+            &mut self.work2,
+            project_iter,
+            shape,
+            &self.params,
+        );
         // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
 
-        advect(1, &mut self.vx, &self.vx0, &self.vx0, &self.vy0, dt, shape, &self.params);
-        advect(2, &mut self.vy, &self.vy0, &self.vx0, &self.vy0, dt, shape, &self.params);
+        advect(
+            1,
+            &mut self.vx,
+            &self.vx0,
+            &self.vx0,
+            &self.vy0,
+            dt,
+            shape,
+            &self.params,
+        );
+        advect(
+            2,
+            &mut self.vy,
+            &self.vy0,
+            &self.vx0,
+            &self.vy0,
+            dt,
+            shape,
+            &self.params,
+        );
 
         if let (true, Some(temperature)) = (self.params.temperature, &mut self.temperature) {
             let buoyancy = self.params.heat_buoyancy;
             for i in 0..shape.0 {
-                for j in 1..shape.1-1 {
-                    self.vy[shape.idx(i, j)] += buoyancy * (
-                        temperature[shape.idx(i, j + 1)] + temperature[shape.idx(i, j - 1)]
-                        +temperature[shape.idx(i + 1, j)] + temperature[shape.idx(i - 1, j)]
-                        -4. * temperature[shape.idx(i, j)]);
+                for j in 1..shape.1 - 1 {
+                    self.vy[shape.idx(i, j)] += buoyancy
+                        * (temperature[shape.idx(i, j + 1)]
+                            + temperature[shape.idx(i, j - 1)]
+                            + temperature[shape.idx(i + 1, j)]
+                            + temperature[shape.idx(i - 1, j)]
+                            - 4. * temperature[shape.idx(i, j)]);
                 }
             }
 
             for i in 0..shape.0 {
                 if !self.params.half_heat_source || i < shape.0 / 2 {
-                    temperature[shape.idx(i, 1)] += (0. - temperature[shape.idx(i, 1)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, 2)] += (0. - temperature[shape.idx(i, 2)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, 3)] += (0. - temperature[shape.idx(i, 3)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, 1)] +=
+                        (0. - temperature[shape.idx(i, 1)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, 2)] +=
+                        (0. - temperature[shape.idx(i, 2)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, 3)] +=
+                        (0. - temperature[shape.idx(i, 3)]) * self.params.heat_exchange_rate;
                 }
                 if !self.params.half_heat_source || shape.0 / 2 <= i {
-                    temperature[shape.idx(i, shape.1-4)] += (1. - temperature[shape.idx(i, shape.1-3)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, shape.1-3)] += (1. - temperature[shape.idx(i, shape.1-2)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, shape.1-2)] += (1. - temperature[shape.idx(i, shape.1-1)]) * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, shape.1 - 4)] += (1.
+                        - temperature[shape.idx(i, shape.1 - 3)])
+                        * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, shape.1 - 3)] += (1.
+                        - temperature[shape.idx(i, shape.1 - 2)])
+                        * self.params.heat_exchange_rate;
+                    temperature[shape.idx(i, shape.1 - 2)] += (1.
+                        - temperature[shape.idx(i, shape.1 - 1)])
+                        * self.params.heat_exchange_rate;
                 }
             }
 
             let mut work = std::mem::take(&mut self.work);
             work.copy_from_slice(temperature);
-            diffuse(0, &mut work, temperature, diff, dt, diffuse_iter, shape, &self.params);
-            advect(0, temperature, &work, &self.vx0, &self.vy0, dt, shape, &self.params);
+            diffuse(
+                0,
+                &mut work,
+                temperature,
+                diff,
+                dt,
+                diffuse_iter,
+                shape,
+                &self.params,
+            );
+            advect(
+                0,
+                temperature,
+                &work,
+                &self.vx0,
+                &self.vy0,
+                dt,
+                shape,
+                &self.params,
+            );
             self.work = work;
         }
 
         // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-        project(&mut self.vx, &mut self.vy, &mut self.work, &mut self.work2, project_iter, shape, &self.params);
+        project(
+            &mut self.vx,
+            &mut self.vy,
+            &mut self.work,
+            &mut self.work2,
+            project_iter,
+            shape,
+            &self.params,
+        );
         // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
         // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
 
-        diffuse(0, &mut self.work, &self.density, diff, dt, diffuse_iter, shape, &self.params);
-        advect(0, &mut self.density, &self.work, &self.vx, &self.vy, dt, shape, &self.params);
+        diffuse(
+            0,
+            &mut self.work,
+            &self.density,
+            diff,
+            dt,
+            diffuse_iter,
+            shape,
+            &self.params,
+        );
+        advect(
+            0,
+            &mut self.density,
+            &self.work,
+            &self.vx,
+            &self.vy,
+            dt,
+            shape,
+            &self.params,
+        );
         decay(&mut self.density, 1. - self.params.decay);
 
-        diffuse(0, &mut self.work, &self.density2, diff, dt, 1, shape, &self.params);
-        advect(0, &mut self.density2, &self.work, &self.vx, &self.vy, dt, shape, &self.params);
+        diffuse(
+            0,
+            &mut self.work,
+            &self.density2,
+            diff,
+            dt,
+            1,
+            shape,
+            &self.params,
+        );
+        advect(
+            0,
+            &mut self.density2,
+            &self.work,
+            &self.vx,
+            &self.vy,
+            dt,
+            shape,
+            &self.params,
+        );
         decay(&mut self.density2, 1. - self.params.decay);
 
         if self.params.obstacle && self.params.dye_from_obstacle {
             let (center, radius) = obstacle_position(&shape);
             let radius = radius + 1;
-            for j in center.1-radius..center.1+radius {
-                for i in center.0-radius..center.0+radius {
+            for j in center.1 - radius..center.1 + radius {
+                for i in center.0 - radius..center.0 + radius {
                     let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
                     if dist2 < radius * radius {
                         if j < center.1 {
@@ -625,7 +823,8 @@ impl State {
         const GRID_ISIZE: isize = GRID_SIZE as isize;
         // Because expected density for each cell depends on the size of the simulation space and particle count, we
         // calculate the threshold from the parameters. Probably we should adjust GRID_SIZE instead.
-        let min_density: usize = PARTICLE_COUNT / (self.shape.0 * self.shape.1 / GRID_ISIZE / GRID_ISIZE) as usize / 2;
+        let min_density: usize =
+            PARTICLE_COUNT / (self.shape.0 * self.shape.1 / GRID_ISIZE / GRID_ISIZE) as usize / 2;
 
         fn grid_position(particle: &Particle) -> (usize, usize) {
             let x = particle.position.0 as usize / GRID_SIZE;
@@ -649,10 +848,18 @@ impl State {
                 let mut added_from = None;
                 if let Some(max_cell) = grid.iter().enumerate().max_by_key(|v| v.1) {
                     let src_cell_position = (max_cell.0 % grid_columns, max_cell.0 / grid_columns);
-                    if let Some(particle) = self.particles.iter_mut().find(|particle| src_cell_position == grid_position(particle)) {
+                    if let Some(particle) = self
+                        .particles
+                        .iter_mut()
+                        .find(|particle| src_cell_position == grid_position(particle))
+                    {
                         particle.position = (
-                            (self.xor128.nexti() as usize % GRID_SIZE + dst_cell_position.0 * GRID_SIZE) as f64,
-                            (self.xor128.nexti() as usize % GRID_SIZE + dst_cell_position.1 * GRID_SIZE) as f64,
+                            (self.xor128.nexti() as usize % GRID_SIZE
+                                + dst_cell_position.0 * GRID_SIZE)
+                                as f64,
+                            (self.xor128.nexti() as usize % GRID_SIZE
+                                + dst_cell_position.1 * GRID_SIZE)
+                                as f64,
                         );
                         particle.history.clear();
                         particle.history_buf.clear();
@@ -675,7 +882,6 @@ impl State {
     }
 
     fn particle_step(&mut self, use_webgl: bool) {
-
         let desired_len = self.particles.len() * (self.params.particle_trails + 1) * 3;
         if self.particle_buf.len() < desired_len {
             self.particle_buf.resize(desired_len, 0.);
@@ -687,8 +893,12 @@ impl State {
 
         let mut idx = 0;
         for particle in &mut self.particles {
-            let pvx = self.vx[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
-            let pvy = self.vy[self.shape.idx(particle.position.0 as isize, particle.position.1 as isize)];
+            let pvx = self.vx[self
+                .shape
+                .idx(particle.position.0 as isize, particle.position.1 as isize)];
+            let pvy = self.vy[self
+                .shape
+                .idx(particle.position.0 as isize, particle.position.1 as isize)];
             let dtx = self.params.delta_time * (self.shape.0 - 2) as f64;
             let dty = self.params.delta_time * (self.shape.1 - 2) as f64;
 
@@ -713,14 +923,14 @@ impl State {
 
             if use_webgl && self.assets.instanced_arrays_ext.is_some() {
                 let (x, y) = (particle.position.0, particle.position.1);
-                self.particle_buf[idx * 3    ] = x as f32 / self.shape.0 as f32;
+                self.particle_buf[idx * 3] = x as f32 / self.shape.0 as f32;
                 self.particle_buf[idx * 3 + 1] = y as f32 / self.shape.1 as f32;
                 self.particle_buf[idx * 3 + 2] = 1.;
                 idx += 1;
 
                 let history_len = particle.history_buf.len();
                 for (i, position) in particle.history_buf.iter().enumerate() {
-                    self.particle_buf[(idx + i) * 3    ] = position.0;
+                    self.particle_buf[(idx + i) * 3] = position.0;
                     self.particle_buf[(idx + i) * 3 + 1] = position.1;
                     self.particle_buf[(idx + i) * 3 + 2] = i as f32 / history_len as f32;
                 }
@@ -754,15 +964,19 @@ impl State {
         const W_MAX: f64 = 0.01;
 
         self.calc_velo();
-        let (u, v, w) = (if self.params.temperature {
-            self.temperature.as_ref().unwrap_or(&self.density)
-        } else {
-            &self.density
-        }, &self.density2, &self.work);
+        let (u, v, w) = (
+            if self.params.temperature {
+                self.temperature.as_ref().unwrap_or(&self.density)
+            } else {
+                &self.density
+            },
+            &self.density2,
+            &self.work,
+        );
         let shape = &self.shape;
         for y in 0..self.shape.1 {
             for x in 0..self.shape.0 {
-                data[shape.idx(x, y) * 4    ] = ((u[shape.idx(x, y)]) / U_MAX * 127.) as u8;
+                data[shape.idx(x, y) * 4] = ((u[shape.idx(x, y)]) / U_MAX * 127.) as u8;
                 data[shape.idx(x, y) * 4 + 1] = ((v[shape.idx(x, y)]) / V_MAX * 127.) as u8;
                 data[shape.idx(x, y) * 4 + 2] = if self.params.show_velocity {
                     ((w[shape.idx(x, y)]) / W_MAX * 127.) as u8
@@ -776,11 +990,11 @@ impl State {
         let (center, radius) = obstacle_position(shape);
 
         if self.params.obstacle {
-            for j in center.1-radius..center.1+radius {
-                for i in center.0-radius..center.0+radius {
+            for j in center.1 - radius..center.1 + radius {
+                for i in center.0 - radius..center.0 + radius {
                     let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
                     if dist2 < radius * radius {
-                        data[shape.idx(i, j) * 4    ] = 127;
+                        data[shape.idx(i, j) * 4] = 127;
                         data[shape.idx(i, j) * 4 + 1] = 127;
                         data[shape.idx(i, j) * 4 + 2] = 0;
                         data[shape.idx(i, j) * 4 + 3] = 255;
@@ -794,7 +1008,7 @@ impl State {
         let shape = &self.shape;
         for particle in &self.particles {
             let (x, y) = (particle.position.0 as isize, particle.position.1 as isize);
-            data[shape.idx(x, y) * 4    ] = 255;
+            data[shape.idx(x, y) * 4] = 255;
             data[shape.idx(x, y) * 4 + 1] = 255;
             data[shape.idx(x, y) * 4 + 2] = 255;
             data[shape.idx(x, y) * 4 + 3] = 255;
@@ -803,8 +1017,9 @@ impl State {
                     let (x, y) = (position.0 as isize, position.1 as isize);
                     let inten = 255 * i / 10;
                     for j in 0..3 {
-                        data[shape.idx(x, y) * 4 + j] = (inten +
-                            data[shape.idx(x, y) * 4 + j] as usize * (255 - inten) / 255) as u8;
+                        data[shape.idx(x, y) * 4 + j] = (inten
+                            + data[shape.idx(x, y) * 4 + j] as usize * (255 - inten) / 255)
+                            as u8;
                     }
                     data[shape.idx(x, y) * 4 + 3] = 255;
                 }
@@ -814,8 +1029,11 @@ impl State {
 
     /// Render particles without instancing. It's slow because it has to make a lot of WebGL calls.
     fn render_particles_gl(&self, gl: &GL) -> Result<(), JsValue> {
-        let shader = self.assets.particle_shader
-            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        let shader = self
+            .assets
+            .particle_shader
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
         gl.use_program(Some(&shader.program));
 
         gl.active_texture(GL::TEXTURE0);
@@ -824,18 +1042,25 @@ impl State {
         gl.uniform_matrix3fv_with_f32_array(
             shader.tex_transform_loc.as_ref(),
             false,
-            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.)),
         );
 
-        let scale = Matrix4::from_nonuniform_scale(PARTICLE_SIZE / self.shape.0 as f32, -PARTICLE_SIZE / self.shape.1 as f32, 1.);
+        let scale = Matrix4::from_nonuniform_scale(
+            PARTICLE_SIZE / self.shape.0 as f32,
+            -PARTICLE_SIZE / self.shape.1 as f32,
+            1.,
+        );
         let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
             * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
 
         enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
         for particle in &self.particles {
             let (x, y) = (particle.position.0, particle.position.1);
-            let translation = Matrix4::from_translation(
-                Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+            let translation = Matrix4::from_translation(Vector3::new(
+                x as f32 / self.shape.0 as f32,
+                y as f32 / self.shape.1 as f32,
+                0.,
+            ));
             gl.uniform_matrix4fv_with_f32_array(
                 shader.transform_loc.as_ref(),
                 false,
@@ -849,12 +1074,17 @@ impl State {
                 for (i, position) in particle.history.iter().enumerate() {
                     let (x, y) = (position.0, position.1);
                     let inten = i as f32 / self.params.particle_trails as f32;
-                    let translation = Matrix4::from_translation(
-                        Vector3::new(x as f32 / self.shape.0 as f32, y as f32 / self.shape.1 as f32, 0.));
+                    let translation = Matrix4::from_translation(Vector3::new(
+                        x as f32 / self.shape.0 as f32,
+                        y as f32 / self.shape.1 as f32,
+                        0.,
+                    ));
                     gl.uniform_matrix4fv_with_f32_array(
                         shader.transform_loc.as_ref(),
                         false,
-                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale)),
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(
+                            &(centerize * translation * scale),
+                        ),
                     );
                     gl.uniform1f(shader.alpha_loc.as_ref(), inten);
                     gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
@@ -867,12 +1097,17 @@ impl State {
     /// Render particles if the device supports instancing. It is much faster with fewer calls to the API.
     /// Note that there are no loops at all in this function.
     fn render_particles_gl_instancing(&self, gl: &GL) -> Result<(), JsValue> {
-        let instanced_arrays_ext = self.assets.instanced_arrays_ext.as_ref()
+        let instanced_arrays_ext = self
+            .assets
+            .instanced_arrays_ext
+            .as_ref()
             .ok_or_else(|| JsValue::from_str("Instanced arrays not supported"))?;
 
-
-        let shader = self.assets.particle_instancing_shader
-            .as_ref().ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+        let shader = self
+            .assets
+            .particle_instancing_shader
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
         if shader.attrib_position_loc < 0 {
             return Err(JsValue::from_str("matrix location was not found"));
         }
@@ -885,27 +1120,41 @@ impl State {
         let scale = Matrix4::from_nonuniform_scale(
             PARTICLE_SIZE / self.shape.0 as f32,
             -PARTICLE_SIZE / self.shape.1 as f32,
-            1.
+            1.,
         );
 
         gl.uniform_matrix4fv_with_f32_array(
             shader.transform_loc.as_ref(),
             false,
-            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(scale))
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(scale)),
         );
 
         gl.uniform_matrix3fv_with_f32_array(
             shader.tex_transform_loc.as_ref(),
             false,
-            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.))
+            <Matrix3<f32> as AsRef<[f32; 9]>>::as_ref(&Matrix3::from_scale(1.)),
         );
 
         gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
         vertex_buffer_sub_data(gl, &self.particle_buf);
 
         let stride = 3 * 4;
-        gl.vertex_attrib_pointer_with_i32(shader.attrib_position_loc as u32, 2, GL::FLOAT, false, stride, 0);
-        gl.vertex_attrib_pointer_with_i32(shader.attrib_alpha_loc as u32, 1, GL::FLOAT, false, stride, 2 * 4);
+        gl.vertex_attrib_pointer_with_i32(
+            shader.attrib_position_loc as u32,
+            2,
+            GL::FLOAT,
+            false,
+            stride,
+            0,
+        );
+        gl.vertex_attrib_pointer_with_i32(
+            shader.attrib_alpha_loc as u32,
+            1,
+            GL::FLOAT,
+            false,
+            stride,
+            2 * 4,
+        );
 
         instanced_arrays_ext.vertex_attrib_divisor_angle(shader.attrib_position_loc as u32, 1);
         gl.enable_vertex_attrib_array(shader.attrib_position_loc as u32);
@@ -914,9 +1163,9 @@ impl State {
 
         instanced_arrays_ext.draw_arrays_instanced_angle(
             GL::TRIANGLE_FAN,
-            0,   // offset
-            4,   // num vertices per instance
-            self.particle_buf_active_len as i32,  // num instances
+            0,                                   // offset
+            4,                                   // num vertices per instance
+            self.particle_buf_active_len as i32, // num instances
         )?;
 
         Ok(())
@@ -935,7 +1184,9 @@ impl State {
             for j in 0..y_cells {
                 for i in 0..x_cells {
                     let (x, y) = (i as f64, j as f64);
-                    let idx = self.shape.idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                    let idx = self
+                        .shape
+                        .idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
                     let (mut vx, mut vy) = (self.vx[idx], self.vy[idx]);
                     let length2 = vx * vx + vy * vy;
                     if MAX_VELOCITY * MAX_VELOCITY < length2 {
@@ -944,12 +1195,24 @@ impl State {
                         vy *= MAX_VELOCITY / length;
                     }
                     ctx.begin_path();
-                    ctx.move_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. + vx * VELOCITY_SCALE,
-                        y * CELL_SIZE_F + CELL_SIZE_F / 2. + vy * VELOCITY_SCALE);
-                    ctx.line_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. - vx * VELOCITY_SCALE - vy * 0.2 * VELOCITY_SCALE,
-                        y * CELL_SIZE_F + CELL_SIZE_F / 2. - vy * VELOCITY_SCALE + vx * 0.2 * VELOCITY_SCALE);
-                    ctx.line_to(x * CELL_SIZE_F + CELL_SIZE_F / 2. - vx * VELOCITY_SCALE + vy * 0.2 * VELOCITY_SCALE,
-                        y * CELL_SIZE_F + CELL_SIZE_F / 2. - vy * VELOCITY_SCALE - vx * 0.2 * VELOCITY_SCALE);
+                    ctx.move_to(
+                        x * CELL_SIZE_F + CELL_SIZE_F / 2. + vx * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2. + vy * VELOCITY_SCALE,
+                    );
+                    ctx.line_to(
+                        x * CELL_SIZE_F + CELL_SIZE_F / 2.
+                            - vx * VELOCITY_SCALE
+                            - vy * 0.2 * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2. - vy * VELOCITY_SCALE
+                            + vx * 0.2 * VELOCITY_SCALE,
+                    );
+                    ctx.line_to(
+                        x * CELL_SIZE_F + CELL_SIZE_F / 2. - vx * VELOCITY_SCALE
+                            + vy * 0.2 * VELOCITY_SCALE,
+                        y * CELL_SIZE_F + CELL_SIZE_F / 2.
+                            - vy * VELOCITY_SCALE
+                            - vx * 0.2 * VELOCITY_SCALE,
+                    );
                     ctx.close_path();
                     ctx.stroke();
                 }
@@ -966,8 +1229,11 @@ impl State {
             let x_cells = self.shape.0 / CELL_SIZE;
             let y_cells = self.shape.1 / CELL_SIZE;
 
-            let shader = self.assets.arrow_shader.as_ref().ok_or_else(
-                || JsValue::from_str("Could not find rect_shader"))?;
+            let shader = self
+                .assets
+                .arrow_shader
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
             gl.use_program(Some(&shader.program));
 
             gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
@@ -979,32 +1245,38 @@ impl State {
             for j in 0..y_cells {
                 for i in 0..x_cells {
                     let (x, y) = (i as f64, j as f64);
-                    let idx = self.shape.idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                    let idx = self
+                        .shape
+                        .idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
                     let (vx, vy) = (self.vx[idx], self.vy[idx]);
                     let length2 = vx * vx + vy * vy;
-                    let length = VELOCITY_SCALE * if MAX_VELOCITY * MAX_VELOCITY < length2 {
-                        MAX_VELOCITY
-                    } else {
-                        length2.sqrt()
-                    };
+                    let length = VELOCITY_SCALE
+                        * if MAX_VELOCITY * MAX_VELOCITY < length2 {
+                            MAX_VELOCITY
+                        } else {
+                            length2.sqrt()
+                        };
 
                     let scale = Matrix4::from_nonuniform_scale(
                         length as f32 / self.shape.0 as f32,
                         -length as f32 / self.shape.1 as f32,
-                        1.
+                        1.,
                     );
 
                     let rotation = Matrix4::from_angle_z(Rad(-vy.atan2(vx) as f32));
 
-                    let translation = Matrix4::from_translation(
-                        Vector3::new(
-                            (x * CELL_SIZE_F) as f32 / self.shape.0 as f32,
-                            (y * CELL_SIZE_F) as f32 / self.shape.1 as f32, 0.));
+                    let translation = Matrix4::from_translation(Vector3::new(
+                        (x * CELL_SIZE_F) as f32 / self.shape.0 as f32,
+                        (y * CELL_SIZE_F) as f32 / self.shape.1 as f32,
+                        0.,
+                    ));
 
                     gl.uniform_matrix4fv_with_f32_array(
                         shader.transform_loc.as_ref(),
                         false,
-                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&(centerize * translation * scale * rotation)),
+                        <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(
+                            &(centerize * translation * scale * rotation),
+                        ),
                     );
 
                     gl.draw_arrays(GL::TRIANGLE_FAN, 0, 3);
@@ -1020,21 +1292,24 @@ impl State {
         self.particles = new_particles(&mut self.xor128, self.shape);
     }
 
-
     /// WebGL specific initializations
     pub fn start_gl(&mut self, gl: &GL) -> Result<(), JsValue> {
-
         self.assets.flow_tex = Some(gen_flow_texture(gl, &self.shape)?);
 
         self.assets.particle_tex = Some(gen_particle_texture(gl)?);
 
-        self.assets.instanced_arrays_ext = gl.get_extension("ANGLE_instanced_arrays")
-            .unwrap_or(None).map(|v| v.unchecked_into::<AngleInstancedArrays>());
-        console_log!("WebGL Instanced arrays is {}", if self.assets.instanced_arrays_ext.is_some() {
-            "available"
-        } else {
-            "not available"
-        });
+        self.assets.instanced_arrays_ext = gl
+            .get_extension("ANGLE_instanced_arrays")
+            .unwrap_or(None)
+            .map(|v| v.unchecked_into::<AngleInstancedArrays>());
+        console_log!(
+            "WebGL Instanced arrays is {}",
+            if self.assets.instanced_arrays_ext.is_some() {
+                "available"
+            } else {
+                "not available"
+            }
+        );
 
         let vert_shader = compile_shader(
             &gl,
@@ -1170,7 +1445,6 @@ impl State {
         gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
         self.assets.arrow_shader = Some(shader);
 
-
         let vert_shader = compile_shader(
             &gl,
             GL::VERTEX_SHADER,
@@ -1232,7 +1506,7 @@ impl State {
         gl.buffer_data_with_i32(
             GL::ARRAY_BUFFER,
             (PARTICLE_COUNT * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
-            GL::DYNAMIC_DRAW
+            GL::DYNAMIC_DRAW,
         );
 
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
@@ -1245,7 +1519,10 @@ impl State {
         gl: &GL,
         // texture: &WebGlTexture,
     ) -> Result<(), JsValue> {
-        let shader = self.assets.rect_shader.as_ref()
+        let shader = self
+            .assets
+            .rect_shader
+            .as_ref()
             .ok_or_else(|| JsValue::from_str("Failed to load rect_shader"))?;
         gl.use_program(Some(&shader.program));
 
@@ -1254,7 +1531,9 @@ impl State {
         gl.uniform_matrix4fv_with_f32_array(
             shader.transform_loc.as_ref(),
             false,
-            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&Matrix4::from_nonuniform_scale(1., -1., 1.)),
+            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(&Matrix4::from_nonuniform_scale(
+                1., -1., 1.,
+            )),
         );
 
         gl.uniform_matrix3fv_with_f32_array(
@@ -1266,7 +1545,7 @@ impl State {
                     self.shape.0 as f32 / ceil_pow2(self.shape.0) as f32,
                     self.shape.1 as f32 / ceil_pow2(self.shape.1) as f32,
                 ),
-            )
+            ),
         );
 
         enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
@@ -1276,8 +1555,14 @@ impl State {
     }
 
     fn put_image_gl(&self, gl: &GL, data: &[u8]) -> Result<(), JsValue> {
-        gl.use_program(Some(&self.assets.rect_shader.as_ref().ok_or_else(
-            || JsValue::from_str("Could not find rect_shader"))?.program));
+        gl.use_program(Some(
+            &self
+                .assets
+                .rect_shader
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?
+                .program,
+        ));
 
         gl.active_texture(GL::TEXTURE0);
         gl.bind_texture(GL::TEXTURE_2D, self.assets.flow_tex.as_ref());
@@ -1329,7 +1614,11 @@ impl Renderer for CanvasRenderer {
     }
     fn render(&self, state: &State, data: &mut [u8]) -> Result<(), JsValue> {
         let image_data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
-            wasm_bindgen::Clamped(data), state.shape.0 as u32, state.shape.1 as u32).unwrap();
+            wasm_bindgen::Clamped(data),
+            state.shape.0 as u32,
+            state.shape.1 as u32,
+        )
+        .unwrap();
         if state.params.particles {
             state.render_particles(data);
         }
@@ -1359,16 +1648,31 @@ impl Renderer for WebGLRenderer {
 }
 
 #[wasm_bindgen]
-pub fn cfd_canvas(width: usize, height: usize, ctx: web_sys::CanvasRenderingContext2d, callback: js_sys::Function) -> Result<(), JsValue> {
-    cfd_temp(width, height, CanvasRenderer{ ctx }, callback)
+pub fn cfd_canvas(
+    width: usize,
+    height: usize,
+    ctx: web_sys::CanvasRenderingContext2d,
+    callback: js_sys::Function,
+) -> Result<(), JsValue> {
+    cfd_temp(width, height, CanvasRenderer { ctx }, callback)
 }
 
 #[wasm_bindgen]
-pub fn cfd_webgl(width: usize, height: usize, gl: GL, callback: js_sys::Function) -> Result<(), JsValue> {
-    cfd_temp(width, height, WebGLRenderer{ gl }, callback)
+pub fn cfd_webgl(
+    width: usize,
+    height: usize,
+    gl: GL,
+    callback: js_sys::Function,
+) -> Result<(), JsValue> {
+    cfd_temp(width, height, WebGLRenderer { gl }, callback)
 }
 
-fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, callback: js_sys::Function) -> Result<(), JsValue> {
+fn cfd_temp(
+    width: usize,
+    height: usize,
+    renderer: impl Renderer + 'static,
+    callback: js_sys::Function,
+) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     let mut data = vec![0u8; 4 * width * height];
@@ -1387,7 +1691,7 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
     console_log!("Starting frames");
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(move || -> Result<(), JsValue> {
-        let Params{mouse_pos, ..} = state.params;
+        let Params { mouse_pos, .. } = state.params;
         // console_log!("Rendering frame {}, mouse_pos: {}, {} delta_time: {}, skip_frames: {}, f: {}, k: {}, ru: {}, rv: {}",
         //     i, mouse_pos[0], mouse_pos[1], delta_time, state.params.skip_frames, f, k, state.params.ru, state.params.rv);
 
@@ -1412,16 +1716,39 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
             } else {
                 &mut state.density
             };
-            add_density(density, mouse_pos[0] as isize, mouse_pos[1] as isize,
-                density_phase * state.params.density, state.shape);
-            let density2_phase = 0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
-            add_density(&mut state.density2, mouse_pos[0] as isize, mouse_pos[1] as isize,
-                density2_phase * state.params.density, state.shape);
+            add_density(
+                density,
+                mouse_pos[0] as isize,
+                mouse_pos[1] as isize,
+                density_phase * state.params.density,
+                state.shape,
+            );
+            let density2_phase =
+                0.5 * ((i as f64 * 0.02352 + 1.) * std::f64::consts::PI).cos() + 0.5;
+            add_density(
+                &mut state.density2,
+                mouse_pos[0] as isize,
+                mouse_pos[1] as isize,
+                density2_phase * state.params.density,
+                state.shape,
+            );
             // let angle_rad = (i as f64 * 0.002 * std::f64::consts::PI) * 2. * std::f64::consts::PI;
             let mut hasher = Xor128::new((i / 16) as u32);
-            let angle_rad = ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI) * 2. * std::f64::consts::PI;
-            add_velo(&mut state.vx, &mut state.vy, state.shape.idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
-                [state.params.mouse_flow_speed * angle_rad.cos(), state.params.mouse_flow_speed * angle_rad.sin()]);
+            let angle_rad =
+                ((hasher.nexti() as f64 / 0xffffffffu32 as f64) * 2. * std::f64::consts::PI)
+                    * 2.
+                    * std::f64::consts::PI;
+            add_velo(
+                &mut state.vx,
+                &mut state.vy,
+                state
+                    .shape
+                    .idx(mouse_pos[0] as isize, mouse_pos[1] as isize),
+                [
+                    state.params.mouse_flow_speed * angle_rad.cos(),
+                    state.params.mouse_flow_speed * angle_rad.sin(),
+                ],
+            );
         }
 
         for _ in 0..state.params.skip_frames {
@@ -1433,15 +1760,16 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
 
         renderer.render(&state, &mut data)?;
 
-        let particle_vec = state.particles.iter()
-        .fold(vec![], |mut acc, p| {
+        let particle_vec = state.particles.iter().fold(vec![], |mut acc, p| {
             acc.push(p.position.0);
             acc.push(p.position.1);
             acc
         });
         let buf = js_sys::Float64Array::from(&particle_vec as &[f64]);
 
-        let callback_ret = callback.call1(&window(), &JsValue::from(buf)).unwrap_or(JsValue::from(true));
+        let callback_ret = callback
+            .call1(&window(), &JsValue::from(buf))
+            .unwrap_or(JsValue::from(true));
         let terminate_requested = js_sys::Reflect::get(&callback_ret, &JsValue::from("terminate"))
             .unwrap_or_else(|_| JsValue::from(true));
         if terminate_requested.is_truthy() {
@@ -1478,11 +1806,12 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
             }
         };
         let assign_boundary = |name: &str, setter: &mut dyn FnMut(BoundaryCondition)| {
-            use BoundaryCondition::{Wrap, Fixed, Flow};
+            use BoundaryCondition::{Fixed, Flow, Wrap};
 
             if let (Ok(new_val), Ok(flow)) = (
                 js_sys::Reflect::get(&callback_ret, &JsValue::from(name)),
-                js_sys::Reflect::get(&callback_ret, &JsValue::from("boundaryFlowSpeed"))) {
+                js_sys::Reflect::get(&callback_ret, &JsValue::from("boundaryFlowSpeed")),
+            ) {
                 if let (Some(s), Some(flow)) = (new_val.as_string(), flow.as_f64()) {
                     match &s as &str {
                         "Fixed" => setter(Fixed),
@@ -1498,27 +1827,47 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
         };
 
         assign_state("deltaTime", &mut |value| state.params.delta_time = value);
-        assign_state("skipFrames", &mut |value| state.params.skip_frames = value as u32);
+        assign_state("skipFrames", &mut |value| {
+            state.params.skip_frames = value as u32
+        });
         assign_state("visc", &mut |value| state.params.visc = value);
         assign_state("diff", &mut |value| state.params.diff = value);
         assign_state("density", &mut |value| state.params.density = value);
         assign_state("decay", &mut |value| state.params.decay = value);
-        assign_state("mouseFlowSpeed", &mut |value| state.params.mouse_flow_speed = value);
+        assign_state("mouseFlowSpeed", &mut |value| {
+            state.params.mouse_flow_speed = value
+        });
         assign_usize("diffIter", &mut |value| state.params.diffuse_iter = value);
         assign_usize("projIter", &mut |value| state.params.project_iter = value);
         assign_check("temperature", &mut |value| state.params.temperature = value);
-        assign_check("halfHeatSource", &mut |value| state.params.half_heat_source = value);
-        assign_state("heatExchangeRate", &mut |value| state.params.heat_exchange_rate = value);
-        assign_state("heatBuoyancy", &mut |value| state.params.heat_buoyancy = value);
+        assign_check("halfHeatSource", &mut |value| {
+            state.params.half_heat_source = value
+        });
+        assign_state("heatExchangeRate", &mut |value| {
+            state.params.heat_exchange_rate = value
+        });
+        assign_state("heatBuoyancy", &mut |value| {
+            state.params.heat_buoyancy = value
+        });
         assign_check("mouseFlow", &mut |value| state.params.mouse_flow = value);
         assign_state("gamma", &mut |value| state.params.gamma = value as f32);
-        assign_check("showVelocity", &mut |value| state.params.show_velocity = value);
-        assign_check("showVelocityField", &mut |value| state.params.show_velocity_field = value);
+        assign_check("showVelocity", &mut |value| {
+            state.params.show_velocity = value
+        });
+        assign_check("showVelocityField", &mut |value| {
+            state.params.show_velocity_field = value
+        });
         assign_check("obstacle", &mut |value| state.params.obstacle = value);
-        assign_check("dyeFromObstacle", &mut |value| state.params.dye_from_obstacle = value);
+        assign_check("dyeFromObstacle", &mut |value| {
+            state.params.dye_from_obstacle = value
+        });
         assign_check("particles", &mut |value| state.params.particles = value);
-        assign_usize("particleTrails", &mut |value| state.params.particle_trails = value);
-        assign_check("redistributeParticles", &mut |value| state.params.redistribute_particles = value);
+        assign_usize("particleTrails", &mut |value| {
+            state.params.particle_trails = value
+        });
+        assign_check("redistributeParticles", &mut |value| {
+            state.params.redistribute_particles = value
+        });
         assign_boundary("boundaryX", &mut |value| state.params.boundary_x = value)?;
         assign_boundary("boundaryY", &mut |value| state.params.boundary_y = value)?;
         if let Ok(new_val) = js_sys::Reflect::get(&callback_ret, &JsValue::from("mousePos")) {
@@ -1541,7 +1890,8 @@ fn cfd_temp(width: usize, height: usize, renderer: impl Renderer + 'static, call
         request_animation_frame(func.borrow().as_ref().unwrap());
 
         Ok(())
-    }) as Box<dyn FnMut() -> Result<(), JsValue>>));
+    })
+        as Box<dyn FnMut() -> Result<(), JsValue>>));
 
     request_animation_frame(g.borrow().as_ref().unwrap());
 
@@ -1609,7 +1959,6 @@ pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
         context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
     };
 }
-
 
 pub fn vertex_buffer_sub_data(context: &GL, vertices: &[f32]) {
     // Note that `Float32Array::view` is somewhat dangerous (hence the
