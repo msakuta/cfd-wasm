@@ -1,5 +1,6 @@
-extern crate console_error_panic_hook;
-extern crate libm;
+mod assets;
+mod xor128;
+
 use std::panic;
 
 use cgmath::{Matrix3, Matrix4, Rad, Vector3};
@@ -12,7 +13,9 @@ use web_sys::{
     WebGlTexture,
 };
 
-use shader_bundle::ShaderBundle;
+use crate::assets::Assets;
+use crate::shader_bundle::ShaderBundle;
+use crate::xor128::Xor128;
 
 #[wasm_bindgen]
 extern "C" {
@@ -81,34 +84,6 @@ fn _document() -> web_sys::Document {
 
 fn _body() -> web_sys::HtmlElement {
     _document().body().expect("document should have a body")
-}
-
-#[derive(Clone, Copy)]
-struct Xor128 {
-    x: u32,
-}
-
-impl Xor128 {
-    fn new(seed: u32) -> Self {
-        let mut ret = Xor128 { x: 2463534242 };
-        if 0 < seed {
-            ret.x ^= (seed & 0xffffffff) >> 0;
-            ret.nexti();
-        }
-        ret.nexti();
-        ret
-    }
-
-    fn nexti(&mut self) -> u32 {
-        // We must bitmask and logical shift to simulate 32bit unsigned integer's behavior.
-        // The optimizer is likely to actually make it uint32 internally (hopefully).
-        // T = (I + L^a)(I + R^b)(I + L^c)
-        // a = 13, b = 17, c = 5
-        let x1 = ((self.x ^ (self.x << 13)) & 0xffffffff) >> 0;
-        let x2 = ((x1 ^ (x1 >> 17)) & 0xffffffff) >> 0;
-        self.x = ((x2 ^ (x2 << 5)) & 0xffffffff) >> 0;
-        self.x
-    }
 }
 
 fn ceil_pow2(i: isize) -> isize {
@@ -497,21 +472,6 @@ const PARTICLE_COUNT: usize = 1000;
 const PARTICLE_SIZE: f32 = 0.75;
 const PARTICLE_MAX_TRAIL_LEN: usize = 10;
 
-struct Assets {
-    instanced_arrays_ext: Option<AngleInstancedArrays>,
-    flow_tex: Option<WebGlTexture>,
-    particle_tex: Option<WebGlTexture>,
-    rect_shader: Option<ShaderBundle>,
-    particle_shader: Option<ShaderBundle>,
-    particle_instancing_shader: Option<ShaderBundle>,
-    arrow_shader: Option<ShaderBundle>,
-    trail_shader: Option<ShaderBundle>,
-    pub trail_buffer: Option<WebGlBuffer>,
-    pub rect_buffer: Option<WebGlBuffer>,
-    arrow_buffer: Option<WebGlBuffer>,
-    particle_buffer: Option<WebGlBuffer>,
-}
-
 struct State {
     density: Vec<f64>,
     density2: Vec<f64>,
@@ -585,20 +545,7 @@ impl State {
             particle_buf: vec![],
             particle_buf_active_len: 0,
             xor128,
-            assets: Assets {
-                instanced_arrays_ext: None,
-                flow_tex: None,
-                particle_tex: None,
-                rect_shader: None,
-                particle_shader: None,
-                particle_instancing_shader: None,
-                arrow_shader: None,
-                trail_shader: None,
-                trail_buffer: None,
-                rect_buffer: None,
-                arrow_buffer: None,
-                particle_buffer: None,
-            },
+            assets: Assets::default(),
         }
     }
 
