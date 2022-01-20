@@ -1,4 +1,6 @@
 mod assets;
+mod gl_util;
+mod shader_bundle;
 mod xor128;
 
 use std::panic;
@@ -8,13 +10,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{
-    CanvasRenderingContext2d, WebGlBuffer, WebGlProgram, WebGlRenderingContext as GL, WebGlShader,
-    WebGlTexture,
-};
+use web_sys::{CanvasRenderingContext2d, WebGlRenderingContext as GL};
 
 use crate::assets::Assets;
-use crate::shader_bundle::ShaderBundle;
+use crate::gl_util::{enable_buffer, vertex_buffer_sub_data};
 use crate::xor128::Xor128;
 
 #[wasm_bindgen]
@@ -32,7 +31,7 @@ macro_rules! console_log {
     }
 }
 
-mod shader_bundle;
+pub(crate) use console_log;
 
 #[wasm_bindgen]
 extern "C" {
@@ -368,68 +367,6 @@ fn new_particles(xor128: &mut Xor128, shape: Shape) -> Vec<Particle> {
             history_buf: vec![],
         })
         .collect::<Vec<_>>()
-}
-
-/// Create a texture buffer, which could be filled by later texSubImage calls.
-fn gen_flow_texture(context: &GL, shape: &Shape) -> Result<WebGlTexture, JsValue> {
-    let texture = context.create_texture().unwrap();
-    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
-
-    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-        GL::TEXTURE_2D,
-        0,
-        GL::RGBA as i32,
-        ceil_pow2(shape.0) as i32,
-        ceil_pow2(shape.1) as i32,
-        0,
-        GL::RGBA,
-        GL::UNSIGNED_BYTE,
-        None,
-    )?;
-
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
-
-    Ok(texture)
-}
-
-/// Procedurally create a texture with round border
-fn gen_particle_texture(context: &GL) -> Result<WebGlTexture, JsValue> {
-    let texture = context.create_texture().unwrap();
-    context.bind_texture(GL::TEXTURE_2D, Some(&texture));
-
-    const PARTICLE_TEXTURE_SIZE: usize = 8;
-    const PARTICLE_TEXTURE_HALF_SIZE: usize = PARTICLE_TEXTURE_SIZE / 2;
-    let mut image = [0u8; PARTICLE_TEXTURE_SIZE * PARTICLE_TEXTURE_SIZE];
-    for i in 0..PARTICLE_TEXTURE_SIZE {
-        for j in 0..PARTICLE_TEXTURE_SIZE {
-            let x = (i as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32
-                / PARTICLE_TEXTURE_HALF_SIZE as f32;
-            let y = (j as i32 - PARTICLE_TEXTURE_HALF_SIZE as i32) as f32
-                / PARTICLE_TEXTURE_HALF_SIZE as f32;
-            image[i * PARTICLE_TEXTURE_SIZE + j] =
-                ((1. - (x * x + y * y).sqrt()).max(0.) * 255.) as u8;
-        }
-    }
-
-    context.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-        GL::TEXTURE_2D,
-        0,
-        GL::LUMINANCE as i32,
-        PARTICLE_TEXTURE_SIZE as i32,
-        PARTICLE_TEXTURE_SIZE as i32,
-        0,
-        GL::LUMINANCE,
-        GL::UNSIGNED_BYTE,
-        Some(&image),
-    )?;
-
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_S, GL::REPEAT as i32);
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_WRAP_T, GL::REPEAT as i32);
-    context.tex_parameteri(GL::TEXTURE_2D, GL::TEXTURE_MIN_FILTER, GL::LINEAR as i32);
-
-    Ok(texture)
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -1241,224 +1178,7 @@ impl State {
 
     /// WebGL specific initializations
     pub fn start_gl(&mut self, gl: &GL) -> Result<(), JsValue> {
-        self.assets.flow_tex = Some(gen_flow_texture(gl, &self.shape)?);
-
-        self.assets.particle_tex = Some(gen_particle_texture(gl)?);
-
-        self.assets.instanced_arrays_ext = gl
-            .get_extension("ANGLE_instanced_arrays")
-            .unwrap_or(None)
-            .map(|v| v.unchecked_into::<AngleInstancedArrays>());
-        console_log!(
-            "WebGL Instanced arrays is {}",
-            if self.assets.instanced_arrays_ext.is_some() {
-                "available"
-            } else {
-                "not available"
-            }
-        );
-
-        let vert_shader = compile_shader(
-            &gl,
-            GL::VERTEX_SHADER,
-            r#"
-            attribute vec2 vertexData;
-            uniform mat4 transform;
-            uniform mat3 texTransform;
-            varying vec2 texCoords;
-            void main() {
-                gl_Position = transform * vec4(vertexData.xy, 0.0, 1.0);
-
-                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
-            }
-        "#,
-        )?;
-        let frag_shader = compile_shader(
-            &gl,
-            GL::FRAGMENT_SHADER,
-            r#"
-            precision mediump float;
-
-            varying vec2 texCoords;
-
-            uniform sampler2D texture;
-            uniform float alpha;
-            uniform float gamma;
-
-            void main() {
-                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = vec4(pow(texColor.rgb, vec3(gamma)), texColor.a * alpha);
-            }
-        "#,
-        )?;
-        let program = link_program(&gl, &vert_shader, &frag_shader)?;
-        gl.use_program(Some(&program));
-
-        let shader = ShaderBundle::new(&gl, program);
-
-        gl.active_texture(GL::TEXTURE0);
-
-        gl.uniform1i(shader.texture_loc.as_ref(), 0);
-        gl.uniform1f(shader.alpha_loc.as_ref(), 1.);
-
-        gl.enable(GL::BLEND);
-        gl.blend_equation(GL::FUNC_ADD);
-        gl.blend_func(GL::SRC_ALPHA, GL::ONE_MINUS_SRC_ALPHA);
-
-        self.assets.rect_shader = Some(shader);
-
-        let frag_shader_add = compile_shader(
-            &gl,
-            GL::FRAGMENT_SHADER,
-            r#"
-            precision mediump float;
-
-            varying vec2 texCoords;
-
-            uniform sampler2D texture;
-            uniform float alpha;
-
-            void main() {
-                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = vec4(texColor.rgb, texColor.r * alpha);
-            }
-        "#,
-        )?;
-        let program = link_program(&gl, &vert_shader, &frag_shader_add)?;
-        let shader = ShaderBundle::new(&gl, program);
-        gl.uniform1f(shader.gamma_loc.as_ref(), 0.5);
-        self.assets.particle_shader = Some(shader);
-
-        let vert_shader_instancing = compile_shader(
-            &gl,
-            GL::VERTEX_SHADER,
-            r#"
-            attribute vec2 vertexData;
-            attribute vec2 position;
-            attribute float alpha;
-            uniform mat4 transform;
-            uniform mat3 texTransform;
-            varying vec2 texCoords;
-            varying float alphaVar;
-
-            void main() {
-                mat4 centerize = mat4(
-                    4, 0, 0, 0,
-                    0, -4, 0, 0,
-                    0, 0, 4, 0,
-                    -1, 1, -1, 1);
-                gl_Position = centerize * (transform * vec4(vertexData.xy, 0.0, 1.0) + vec4(position.xy, 0.0, 1.0));
-                texCoords = (texTransform * vec3((vertexData.xy + 1.) * 0.5, 1.)).xy;
-                alphaVar = alpha;
-            }
-        "#,
-        )?;
-        let frag_shader_instancing = compile_shader(
-            &gl,
-            GL::FRAGMENT_SHADER,
-            r#"
-            precision mediump float;
-
-            varying vec2 texCoords;
-            varying float alphaVar;
-
-            uniform sampler2D texture;
-
-            void main() {
-                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = vec4(texColor.rgb, texColor.r * alphaVar);
-            }
-        "#,
-        )?;
-        let program = link_program(&gl, &vert_shader_instancing, &frag_shader_instancing)?;
-        let shader = ShaderBundle::new(&gl, program);
-        self.assets.particle_instancing_shader = Some(shader);
-
-        let frag_shader_flat = compile_shader(
-            &gl,
-            GL::FRAGMENT_SHADER,
-            r#"
-            precision mediump float;
-
-            uniform float alpha;
-
-            void main() {
-                gl_FragColor = vec4(0.5, 0.5, 1., alpha);
-            }
-        "#,
-        )?;
-        let program = link_program(&gl, &vert_shader, &frag_shader_flat)?;
-        let shader = ShaderBundle::new(&gl, program);
-        gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
-        self.assets.arrow_shader = Some(shader);
-
-        let vert_shader = compile_shader(
-            &gl,
-            GL::VERTEX_SHADER,
-            r#"
-            attribute vec4 vertexData;
-            uniform mat4 transform;
-            uniform mat3 texTransform;
-            varying vec2 texCoords;
-            void main() {
-                gl_Position = vec4(vertexData.xy, 0.0, 1.0);
-
-                texCoords = (texTransform * vec3(vertexData.zw, 1.)).xy;
-            }
-        "#,
-        )?;
-        let frag_shader = compile_shader(
-            &gl,
-            GL::FRAGMENT_SHADER,
-            r#"
-            precision mediump float;
-
-            varying vec2 texCoords;
-
-            uniform sampler2D texture;
-
-            void main() {
-                vec4 texColor = texture2D( texture, vec2(texCoords.x, texCoords.y) );
-                gl_FragColor = texColor;
-            }
-        "#,
-        )?;
-        let program = link_program(&gl, &vert_shader, &frag_shader)?;
-        gl.use_program(Some(&program));
-        self.assets.trail_shader = Some(ShaderBundle::new(&gl, program));
-
-        gl.active_texture(GL::TEXTURE0);
-        gl.uniform1i(
-            self.assets
-                .trail_shader
-                .as_ref()
-                .and_then(|s| s.texture_loc.as_ref()),
-            0,
-        );
-
-        self.assets.trail_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-
-        self.assets.rect_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.rect_buffer.as_ref());
-        let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
-        vertex_buffer_data(&gl, &rect_vertices);
-
-        self.assets.arrow_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.arrow_buffer.as_ref());
-        let arrow_vertices: [f32; 6] = [1., 0., -1., -0.2, -1., 0.2];
-        vertex_buffer_data(&gl, &arrow_vertices);
-
-        self.assets.particle_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-        gl.bind_buffer(GL::ARRAY_BUFFER, self.assets.particle_buffer.as_ref());
-        gl.buffer_data_with_i32(
-            GL::ARRAY_BUFFER,
-            (PARTICLE_COUNT * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
-            GL::DYNAMIC_DRAW,
-        );
-
-        gl.clear_color(0.0, 0.2, 0.5, 1.0);
-
-        Ok(())
+        self.assets.start_gl(gl, &self.shape)
     }
 
     pub fn draw_tex(
@@ -1843,88 +1563,4 @@ fn cfd_temp(
     request_animation_frame(g.borrow().as_ref().unwrap());
 
     Ok(())
-}
-
-fn compile_shader(context: &GL, shader_type: u32, source: &str) -> Result<WebGlShader, String> {
-    let shader = context
-        .create_shader(shader_type)
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
-    context.shader_source(&shader, source);
-    context.compile_shader(&shader);
-
-    if context
-        .get_shader_parameter(&shader, GL::COMPILE_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(shader)
-    } else {
-        Err(context
-            .get_shader_info_log(&shader)
-            .unwrap_or_else(|| String::from("Unknown error creating shader")))
-    }
-}
-
-fn link_program(
-    context: &GL,
-    vert_shader: &WebGlShader,
-    frag_shader: &WebGlShader,
-) -> Result<WebGlProgram, String> {
-    let program = context
-        .create_program()
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
-
-    context.attach_shader(&program, vert_shader);
-    context.attach_shader(&program, frag_shader);
-    context.link_program(&program);
-
-    if context
-        .get_program_parameter(&program, GL::LINK_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(program)
-    } else {
-        Err(context
-            .get_program_info_log(&program)
-            .unwrap_or_else(|| String::from("Unknown error creating program object")))
-    }
-}
-
-pub fn vertex_buffer_data(context: &GL, vertices: &[f32]) {
-    // Note that `Float32Array::view` is somewhat dangerous (hence the
-    // `unsafe`!). This is creating a raw view into our module's
-    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
-    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
-    // causing the `Float32Array` to be invalid.
-    //
-    // As a result, after `Float32Array::view` we have to be very careful not to
-    // do any memory allocations before it's dropped.
-    unsafe {
-        let vert_array = js_sys::Float32Array::view(vertices);
-
-        context.buffer_data_with_array_buffer_view(GL::ARRAY_BUFFER, &vert_array, GL::STATIC_DRAW);
-    };
-}
-
-pub fn vertex_buffer_sub_data(context: &GL, vertices: &[f32]) {
-    // Note that `Float32Array::view` is somewhat dangerous (hence the
-    // `unsafe`!). This is creating a raw view into our module's
-    // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
-    // (aka do a memory allocation in Rust) it'll cause the buffer to change,
-    // causing the `Float32Array` to be invalid.
-    //
-    // As a result, after `Float32Array::view` we have to be very careful not to
-    // do any memory allocations before it's dropped.
-    unsafe {
-        let vert_array = js_sys::Float32Array::view(vertices);
-
-        context.buffer_sub_data_with_i32_and_array_buffer_view(GL::ARRAY_BUFFER, 0, &vert_array);
-    };
-}
-
-pub fn enable_buffer(gl: &GL, buffer: &Option<WebGlBuffer>, elements: i32, vertex_position: u32) {
-    gl.bind_buffer(GL::ARRAY_BUFFER, buffer.as_ref());
-    gl.vertex_attrib_pointer_with_i32(vertex_position, elements, GL::FLOAT, false, 0, 0);
-    gl.enable_vertex_attrib_array(vertex_position);
 }

@@ -1,3 +1,4 @@
+use wasm_bindgen::prelude::*;
 use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlUniformLocation};
 
 pub struct ShaderBundle {
