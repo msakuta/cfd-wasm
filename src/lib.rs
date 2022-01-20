@@ -1,6 +1,7 @@
 mod assets;
 mod cfd;
 mod gl_util;
+mod params;
 mod shader_bundle;
 mod xor128;
 
@@ -16,6 +17,7 @@ use web_sys::{CanvasRenderingContext2d, WebGlRenderingContext as GL};
 use crate::assets::Assets;
 use crate::cfd::{add_density, add_velo, advect, decay, diffuse, obstacle_position, project};
 use crate::gl_util::{enable_buffer, vertex_buffer_sub_data};
+use crate::params::Params;
 use crate::xor128::Xor128;
 
 #[wasm_bindgen]
@@ -134,35 +136,6 @@ enum BoundaryCondition {
     Flow(f64),
 }
 
-#[derive(Copy, Clone)]
-struct Params {
-    delta_time: f64,
-    skip_frames: u32,
-    mouse_pos: [i32; 2],
-    visc: f64,
-    diff: f64,
-    density: f64,
-    decay: f64,
-    mouse_flow_speed: f64,
-    diffuse_iter: usize,
-    project_iter: usize,
-    temperature: bool,
-    half_heat_source: bool,
-    heat_exchange_rate: f64,
-    heat_buoyancy: f64,
-    mouse_flow: bool,
-    gamma: f32,
-    show_velocity: bool,
-    show_velocity_field: bool,
-    obstacle: bool,
-    dye_from_obstacle: bool,
-    particles: bool,
-    particle_trails: usize,
-    redistribute_particles: bool,
-    boundary_y: BoundaryCondition,
-    boundary_x: BoundaryCondition,
-}
-
 const PARTICLE_COUNT: usize = 1000;
 const PARTICLE_SIZE: f32 = 0.75;
 const PARTICLE_MAX_TRAIL_LEN: usize = 10;
@@ -192,33 +165,7 @@ impl State {
     fn new(width: usize, height: usize) -> Self {
         let mut xor128 = Xor128::new(123);
 
-        let params = Params {
-            delta_time: 1.,
-            skip_frames: 1,
-            mouse_pos: [0, 0],
-            visc: 0.01,
-            diff: 0., // Diffusion seems ok with 0, since viscousity and Gauss-Seidel blends up anyway.
-            density: 0.5,
-            decay: 0.01,
-            mouse_flow_speed: 0.02,
-            diffuse_iter: 4,
-            project_iter: 20,
-            temperature: false,
-            half_heat_source: false,
-            heat_exchange_rate: 0.2,
-            heat_buoyancy: 0.05,
-            mouse_flow: true,
-            gamma: 1.0,
-            show_velocity: true,
-            show_velocity_field: false,
-            obstacle: false,
-            dye_from_obstacle: true,
-            particles: true,
-            particle_trails: 0,
-            redistribute_particles: true,
-            boundary_x: BoundaryCondition::Wrap,
-            boundary_y: BoundaryCondition::Wrap,
-        };
+        let params = Params::default();
 
         let shape = (width as isize, height as isize);
 
