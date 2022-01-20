@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wasm-bindgen = "0.2.67"
-js-sys = ""
+js-sys = "0.3.56"
 console_error_panic_hook = "0.1.6"
 libm = "0.1.4"
 cgmath = "0.18.0"
