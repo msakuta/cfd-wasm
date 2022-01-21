@@ -1,3 +1,5 @@
+//! Definition of simulation state and its update logic
+
 mod cfd;
 pub(crate) mod particles;
 mod renderer;

@@ -1,4 +1,4 @@
-use super::console_log;
+use crate::wasm_util::console_log;
 use web_sys::{WebGlProgram, WebGlRenderingContext as GL, WebGlUniformLocation};
 
 pub struct ShaderBundle {

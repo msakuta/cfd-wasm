@@ -7,11 +7,10 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, WebGlRenderingContext as GL};
 
 use crate::{
-    console_log,
     params::Params,
     shape::Idx,
     state::{add_density, add_velo, BoundaryCondition, State},
-    window,
+    wasm_util::{console_log, window},
     xor128::Xor128,
 };
 
