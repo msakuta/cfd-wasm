@@ -10,7 +10,7 @@ use web_sys::WebGlRenderingContext as GL;
 
 use crate::{
     assets::Assets,
-    ceil_pow2,
+    bit_util::ceil_pow2,
     gl_util::enable_buffer,
     params::Params,
     shape::{Idx, Shape},

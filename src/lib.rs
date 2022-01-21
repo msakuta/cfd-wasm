@@ -1,4 +1,5 @@
 mod assets;
+mod bit_util;
 mod gl_util;
 mod params;
 mod shader_bundle;
@@ -7,12 +8,5 @@ mod state;
 mod wasm_util;
 mod xor128;
 
+/// Published entry points for JS runtime
 pub use state::{cfd_canvas, cfd_webgl};
-
-fn ceil_pow2(i: isize) -> isize {
-    let mut bit = 0;
-    while (1 << bit) < i {
-        bit += 1;
-    }
-    1 << bit
-}
