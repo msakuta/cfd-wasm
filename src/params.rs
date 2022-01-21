@@ -1,4 +1,4 @@
-use super::BoundaryCondition;
+use super::cfd::BoundaryCondition;
 
 #[derive(Copy, Clone)]
 pub(crate) struct Params {

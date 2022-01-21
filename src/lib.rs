@@ -13,7 +13,7 @@ use web_sys::WebGlRenderingContext as GL;
 
 use crate::{
     assets::Assets,
-    cfd::{advect, decay, diffuse, obstacle_position, project},
+    cfd::obstacle_position,
     gl_util::enable_buffer,
     params::Params,
     particles::{new_particles, Particle},
@@ -106,13 +106,6 @@ impl Idx for Shape {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
-enum BoundaryCondition {
-    Wrap,
-    Fixed,
-    Flow(f64),
-}
-
 struct State {
     density: Vec<f64>,
     density2: Vec<f64>,
@@ -161,216 +154,6 @@ impl State {
             particle_buf_active_len: 0,
             xor128,
             assets: Assets::default(),
-        }
-    }
-
-    fn fluid_step(&mut self) {
-        let visc = self.params.visc;
-        let diff = self.params.diff;
-        let dt = self.params.delta_time;
-        let diffuse_iter = self.params.diffuse_iter;
-        let project_iter = self.params.project_iter;
-        let shape = self.shape;
-
-        if self.params.temperature {
-            if self.temperature.is_none() {
-                self.temperature = Some(vec![0.5f64; (shape.0 * shape.1) as usize]);
-            }
-        }
-
-        self.vx0.copy_from_slice(&self.vx);
-        self.vy0.copy_from_slice(&self.vy);
-
-        // console_log!("diffusion: {} viscousity: {}", diff, visc);
-
-        diffuse(
-            1,
-            &mut self.vx0,
-            &self.vx,
-            visc,
-            dt,
-            diffuse_iter,
-            shape,
-            &self.params,
-        );
-        diffuse(
-            2,
-            &mut self.vy0,
-            &self.vy,
-            visc,
-            dt,
-            diffuse_iter,
-            shape,
-            &self.params,
-        );
-
-        // let (prev_div, prev_max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-        project(
-            &mut self.vx0,
-            &mut self.vy0,
-            &mut self.work,
-            &mut self.work2,
-            project_iter,
-            shape,
-            &self.params,
-        );
-        // let (after_div, max_div) = sum_divergence(&mut vx0, &mut vy0, (self.width, self.height));
-        // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-
-        advect(
-            1,
-            &mut self.vx,
-            &self.vx0,
-            &self.vx0,
-            &self.vy0,
-            dt,
-            shape,
-            &self.params,
-        );
-        advect(
-            2,
-            &mut self.vy,
-            &self.vy0,
-            &self.vx0,
-            &self.vy0,
-            dt,
-            shape,
-            &self.params,
-        );
-
-        if let (true, Some(temperature)) = (self.params.temperature, &mut self.temperature) {
-            let buoyancy = self.params.heat_buoyancy;
-            for i in 0..shape.0 {
-                for j in 1..shape.1 - 1 {
-                    self.vy[shape.idx(i, j)] += buoyancy
-                        * (temperature[shape.idx(i, j + 1)]
-                            + temperature[shape.idx(i, j - 1)]
-                            + temperature[shape.idx(i + 1, j)]
-                            + temperature[shape.idx(i - 1, j)]
-                            - 4. * temperature[shape.idx(i, j)]);
-                }
-            }
-
-            for i in 0..shape.0 {
-                if !self.params.half_heat_source || i < shape.0 / 2 {
-                    temperature[shape.idx(i, 1)] +=
-                        (0. - temperature[shape.idx(i, 1)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, 2)] +=
-                        (0. - temperature[shape.idx(i, 2)]) * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, 3)] +=
-                        (0. - temperature[shape.idx(i, 3)]) * self.params.heat_exchange_rate;
-                }
-                if !self.params.half_heat_source || shape.0 / 2 <= i {
-                    temperature[shape.idx(i, shape.1 - 4)] += (1.
-                        - temperature[shape.idx(i, shape.1 - 3)])
-                        * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, shape.1 - 3)] += (1.
-                        - temperature[shape.idx(i, shape.1 - 2)])
-                        * self.params.heat_exchange_rate;
-                    temperature[shape.idx(i, shape.1 - 2)] += (1.
-                        - temperature[shape.idx(i, shape.1 - 1)])
-                        * self.params.heat_exchange_rate;
-                }
-            }
-
-            let mut work = std::mem::take(&mut self.work);
-            work.copy_from_slice(temperature);
-            diffuse(
-                0,
-                &mut work,
-                temperature,
-                diff,
-                dt,
-                diffuse_iter,
-                shape,
-                &self.params,
-            );
-            advect(
-                0,
-                temperature,
-                &work,
-                &self.vx0,
-                &self.vy0,
-                dt,
-                shape,
-                &self.params,
-            );
-            self.work = work;
-        }
-
-        // let (prev_div, prev_max_div) = sum_divergence(vx, vy, (self.width, self.height));
-        project(
-            &mut self.vx,
-            &mut self.vy,
-            &mut self.work,
-            &mut self.work2,
-            project_iter,
-            shape,
-            &self.params,
-        );
-        // let (after_div, max_div) = sum_divergence(vx, vy, (self.width, self.height));
-        // console_log!("prev_div: {:.5e} max: {:.5e} after_div: {:.5e} max_div: {:.5e}", prev_div, prev_max_div, after_div, max_div);
-
-        diffuse(
-            0,
-            &mut self.work,
-            &self.density,
-            diff,
-            dt,
-            diffuse_iter,
-            shape,
-            &self.params,
-        );
-        advect(
-            0,
-            &mut self.density,
-            &self.work,
-            &self.vx,
-            &self.vy,
-            dt,
-            shape,
-            &self.params,
-        );
-        decay(&mut self.density, 1. - self.params.decay);
-
-        diffuse(
-            0,
-            &mut self.work,
-            &self.density2,
-            diff,
-            dt,
-            1,
-            shape,
-            &self.params,
-        );
-        advect(
-            0,
-            &mut self.density2,
-            &self.work,
-            &self.vx,
-            &self.vy,
-            dt,
-            shape,
-            &self.params,
-        );
-        decay(&mut self.density2, 1. - self.params.decay);
-
-        if self.params.obstacle && self.params.dye_from_obstacle {
-            let (center, radius) = obstacle_position(&shape);
-            let radius = radius + 1;
-            for j in center.1 - radius..center.1 + radius {
-                for i in center.0 - radius..center.0 + radius {
-                    let dist2 = (j - center.1) * (j - center.1) + (i - center.0) * (i - center.0);
-                    if dist2 < radius * radius {
-                        if j < center.1 {
-                            self.density[shape.idx(i, j)] = 1.;
-                        }
-                        if center.1 < j {
-                            self.density2[shape.idx(i, j)] = 1.;
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -542,12 +325,6 @@ impl State {
             }
         }
         Ok(())
-    }
-
-    fn reset_particles(&mut self) {
-        // Technically, this is a new allocation that we would want to avoid, but it happens only
-        // when the user presses reset button.
-        self.particles = new_particles(&mut self.xor128, self.shape);
     }
 
     /// WebGL specific initializations

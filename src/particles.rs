@@ -37,6 +37,12 @@ impl State {
         })
     }
 
+    pub(super) fn reset_particles(&mut self) {
+        // Technically, this is a new allocation that we would want to avoid, but it happens only
+        // when the user presses reset button.
+        self.particles = new_particles(&mut self.xor128, self.shape);
+    }
+
     /// Redistirbute particles from concentrated area to sparse area, because the simulation tend to
     /// gather particles to certain location.
     ///
