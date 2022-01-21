@@ -332,4 +332,35 @@ impl State {
 
         Ok(())
     }
+
+    fn render_contours(&self, data: &mut [u8]) {
+        use crate::marching_squares::{line, pick_bits};
+        let shape = &self.shape;
+        let temperature = if let Some(ref temperature) = self.temperature {
+            temperature
+        } else {
+            return;
+        };
+        const LEVELS: usize = 8;
+        for level in 1..LEVELS {
+            let threshold = level as f64 / LEVELS as f64;
+            let red = (threshold * 127. + 128.) as u8;
+            let blue = ((1. - threshold) * 127. + 128.) as u8;
+            for y in 0..shape.1 {
+                for x in 0..shape.0 {
+                    if let Some(_) = line(pick_bits(
+                        temperature,
+                        *shape,
+                        (x as isize, y as isize),
+                        threshold,
+                    )) {
+                        data[shape.idx(x, y) * 4] = red;
+                        data[shape.idx(x, y) * 4 + 1] = 255;
+                        data[shape.idx(x, y) * 4 + 2] = blue;
+                        data[shape.idx(x, y) * 4 + 3] = 255;
+                    }
+                }
+            }
+        }
+    }
 }

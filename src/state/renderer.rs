@@ -45,6 +45,7 @@ impl Renderer for CanvasRenderer {
         .unwrap();
         if state.params.particles {
             state.render_particles(data);
+            state.render_contours(data);
         }
         self.ctx.put_image_data(&image_data, 0., 0.)?;
         state.render_velocity_field(&self.ctx);
