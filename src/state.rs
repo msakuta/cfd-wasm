@@ -346,8 +346,8 @@ impl State {
             let threshold = level as f64 / LEVELS as f64;
             let red = (threshold * 127. + 128.) as u8;
             let blue = ((1. - threshold) * 127. + 128.) as u8;
-            for y in 0..shape.1 {
-                for x in 0..shape.0 {
+            for y in 0..shape.1 - 1 {
+                for x in 0..shape.0 - 1 {
                     if let Some(_) = line(pick_bits(
                         temperature,
                         *shape,

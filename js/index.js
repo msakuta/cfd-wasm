@@ -49,6 +49,7 @@ async function run(module) {
     boundaryFlowSpeed: 0.02,
     temperature: false,
     halfHeatSource: false,
+    showContourLines: true,
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
     gamma: 1.0,
@@ -163,6 +164,7 @@ async function run(module) {
   const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
   const temperatureCheck = checkboxInit("temperature", value => params.temperature = value);
   const halfHeatSourceCheck = checkboxInit("halfHeatSource", value => params.halfHeatSource = value);
+  const showContourLinesCheck = checkboxInit("showContourLines", value => params.showContourLines = value);
   const heatExchangeRateSlider = sliderInit("heatExchangeRate", "heatExchangeRateLabel", value => params.heatExchangeRate = value);
   const heatBuoyancySlider = sliderInit("heatBuoyancy", "heatBuoyancyLabel", value => params.heatBuoyancy = value, true);
   const gammaSlider = sliderInit("gamma", "gammaLabel", value => params.gamma = value, true);
@@ -197,6 +199,7 @@ async function run(module) {
     callInput(obstacleCheck, false);
     callInput(temperatureCheck, false);
     callInput(halfHeatSourceCheck, false);
+    callInput(showContourLinesCheck, false);
     callInput(fixedXCheck, true);
   };
 
@@ -210,6 +213,7 @@ async function run(module) {
     callInput(obstacleCheck, false);
     callInput(temperatureCheck, true);
     callInput(halfHeatSourceCheck, true);
+    callInput(showContourLinesCheck, true);
     callInput(fixedXCheck, true);
   };
 
@@ -222,6 +226,7 @@ async function run(module) {
     callInput(obstacleCheck, true);
     callInput(temperatureCheck, false);
     callInput(halfHeatSourceCheck, false);
+    callInput(showContourLinesCheck, false);
     callInput(flowXCheck, true);
   };
 

@@ -25,6 +25,7 @@ pub(crate) struct Params {
     pub particles: bool,
     pub particle_trails: usize,
     pub redistribute_particles: bool,
+    pub contour_lines: bool,
     pub boundary_y: BoundaryCondition,
     pub boundary_x: BoundaryCondition,
 }
@@ -55,6 +56,7 @@ impl Default for Params {
             particles: true,
             particle_trails: 0,
             redistribute_particles: true,
+            contour_lines: true,
             boundary_x: BoundaryCondition::Wrap,
             boundary_y: BoundaryCondition::Wrap,
         }

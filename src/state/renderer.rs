@@ -45,6 +45,8 @@ impl Renderer for CanvasRenderer {
         .unwrap();
         if state.params.particles {
             state.render_particles(data);
+        }
+        if state.params.contour_lines && state.params.temperature {
             state.render_contours(data);
         }
         self.ctx.put_image_data(&image_data, 0., 0.)?;
@@ -263,6 +265,9 @@ fn cfd_temp(
         assign_check("temperature", &mut |value| state.params.temperature = value);
         assign_check("halfHeatSource", &mut |value| {
             state.params.half_heat_source = value
+        });
+        assign_check("showContourLines", &mut |value| {
+            state.params.contour_lines = value
         });
         assign_state("heatExchangeRate", &mut |value| {
             state.params.heat_exchange_rate = value
