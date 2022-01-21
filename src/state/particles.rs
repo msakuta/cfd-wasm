@@ -2,8 +2,12 @@ use cgmath::{Matrix3, Matrix4, Vector3};
 use wasm_bindgen::prelude::*;
 use web_sys::WebGlRenderingContext as GL;
 
-use super::{xor128::Xor128, Idx, Shape, State};
-use crate::gl_util::{enable_buffer, vertex_buffer_sub_data};
+use super::State;
+use crate::{
+    gl_util::{enable_buffer, vertex_buffer_sub_data},
+    xor128::Xor128,
+    Idx, Shape,
+};
 
 pub(crate) const PARTICLE_COUNT: usize = 1000;
 pub(crate) const PARTICLE_SIZE: f32 = 0.75;

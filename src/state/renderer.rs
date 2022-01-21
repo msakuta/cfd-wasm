@@ -7,12 +7,12 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, WebGlRenderingContext as GL};
 
 use crate::{
-    cfd::{add_density, add_velo, BoundaryCondition},
     console_log,
     params::Params,
+    state::{add_density, add_velo, BoundaryCondition, State},
     window,
     xor128::Xor128,
-    Idx, State,
+    Idx,
 };
 
 fn request_animation_frame(f: &Closure<dyn FnMut() -> Result<(), JsValue>>) {
