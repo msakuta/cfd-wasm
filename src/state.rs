@@ -7,7 +7,12 @@ use wasm_bindgen::prelude::*;
 use web_sys::WebGlRenderingContext as GL;
 
 use crate::{
-    assets::Assets, ceil_pow2, gl_util::enable_buffer, params::Params, xor128::Xor128, Idx, Shape,
+    assets::Assets,
+    ceil_pow2,
+    gl_util::enable_buffer,
+    params::Params,
+    shape::{Idx, Shape},
+    xor128::Xor128,
 };
 
 use self::{

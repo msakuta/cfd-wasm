@@ -1,4 +1,4 @@
-use super::{ceil_pow2, Shape};
+use super::{ceil_pow2, shape::Shape};
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGlBuffer, WebGlProgram, WebGlRenderingContext as GL, WebGlShader, WebGlTexture};
 

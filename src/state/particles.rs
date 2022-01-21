@@ -5,8 +5,8 @@ use web_sys::WebGlRenderingContext as GL;
 use super::State;
 use crate::{
     gl_util::{enable_buffer, vertex_buffer_sub_data},
+    shape::{Idx, Shape},
     xor128::Xor128,
-    Idx, Shape,
 };
 
 pub(crate) const PARTICLE_COUNT: usize = 1000;

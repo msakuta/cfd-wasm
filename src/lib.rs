@@ -2,6 +2,7 @@ mod assets;
 mod gl_util;
 mod params;
 mod shader_bundle;
+mod shape;
 mod state;
 mod xor128;
 
@@ -78,17 +79,4 @@ fn ceil_pow2(i: isize) -> isize {
         bit += 1;
     }
     1 << bit
-}
-
-trait Idx {
-    fn idx(&self, x: isize, y: isize) -> usize;
-}
-
-type Shape = (isize, isize);
-
-impl Idx for Shape {
-    fn idx(&self, x: isize, y: isize) -> usize {
-        let (width, height) = self;
-        ((x + width) % width + (y + height) % height * width) as usize
-    }
 }

@@ -9,10 +9,10 @@ use web_sys::{CanvasRenderingContext2d, WebGlRenderingContext as GL};
 use crate::{
     console_log,
     params::Params,
+    shape::Idx,
     state::{add_density, add_velo, BoundaryCondition, State},
     window,
     xor128::Xor128,
-    Idx,
 };
 
 fn request_animation_frame(f: &Closure<dyn FnMut() -> Result<(), JsValue>>) {

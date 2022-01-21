@@ -1,7 +1,10 @@
 //! Computational Fluid Dynamics methods
 
 use super::State;
-use crate::{params::Params, Idx, Shape};
+use crate::{
+    params::Params,
+    shape::{Idx, Shape},
+};
 
 #[derive(Copy, Clone, PartialEq)]
 pub(crate) enum BoundaryCondition {
