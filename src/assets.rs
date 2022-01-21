@@ -4,7 +4,8 @@ use super::{
     gl_util::{
         compile_shader, gen_flow_texture, gen_particle_texture, link_program, vertex_buffer_data,
     },
-    Shape, PARTICLE_COUNT, PARTICLE_MAX_TRAIL_LEN,
+    particles::{PARTICLE_COUNT, PARTICLE_MAX_TRAIL_LEN},
+    Shape,
 };
 use crate::shader_bundle::ShaderBundle;
 use wasm_bindgen::prelude::*;
