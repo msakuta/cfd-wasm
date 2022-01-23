@@ -20,6 +20,7 @@ pub(crate) struct Assets {
     pub particle_instancing_shader: Option<ShaderBundle>,
     pub arrow_shader: Option<ShaderBundle>,
     pub trail_shader: Option<ShaderBundle>,
+    pub contour_shader: Option<ShaderBundle>,
     pub trail_buffer: Option<WebGlBuffer>,
     pub rect_buffer: Option<WebGlBuffer>,
     pub arrow_buffer: Option<WebGlBuffer>,
@@ -37,6 +38,7 @@ impl Default for Assets {
             particle_instancing_shader: None,
             arrow_shader: None,
             trail_shader: None,
+            contour_shader: None,
             trail_buffer: None,
             rect_buffer: None,
             arrow_buffer: None,
@@ -197,6 +199,24 @@ impl Assets {
         let shader = ShaderBundle::new(&gl, program);
         gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
         self.arrow_shader = Some(shader);
+
+        let frag_shader_color = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            uniform vec4 color;
+
+            void main() {
+                gl_FragColor = color;
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_color)?;
+        let shader = ShaderBundle::new(&gl, program);
+        gl.uniform4f(shader.color_loc.as_ref(), 1.0, 1.0, 1.0, 0.5);
+        self.contour_shader = Some(shader);
 
         let vert_shader = compile_shader(
             &gl,
