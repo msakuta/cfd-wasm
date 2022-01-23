@@ -33,7 +33,8 @@ impl State {
                 1.,
             );
 
-            enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+            enable_buffer(gl, &self.assets.contour_buffer, 2, shader.vertex_position);
+
             const LEVELS: usize = 8;
             for level in 1..LEVELS {
                 let threshold = level as f64 / LEVELS as f64;
@@ -44,28 +45,35 @@ impl State {
 
                 for y in 0..shape.1 - 1 {
                     for x in 0..shape.0 - 1 {
-                        if let Some(_) = line(pick_bits(
-                            temperature,
-                            shape,
-                            (x as isize, y as isize),
-                            threshold,
-                        )) {
-                            let translation = Matrix4::from_translation(Vector3::new(
-                                x as f32 / self.shape.0 as f32,
-                                y as f32 / self.shape.1 as f32,
-                                0.,
-                            ));
+                        let bits =
+                            pick_bits(temperature, shape, (x as isize, y as isize), threshold);
 
-                            gl.uniform_matrix4fv_with_f32_array(
-                                shader.transform_loc.as_ref(),
-                                false,
-                                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(
-                                    &(centerize * translation * scale),
-                                ),
-                            );
-
-                            gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+                        if bits == 0 || bits == 15 {
+                            continue;
                         }
+                        let translation = Matrix4::from_translation(Vector3::new(
+                            x as f32 / self.shape.0 as f32,
+                            y as f32 / self.shape.1 as f32,
+                            0.,
+                        ));
+
+                        gl.uniform_matrix4fv_with_f32_array(
+                            shader.transform_loc.as_ref(),
+                            false,
+                            <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(
+                                &(centerize * translation * scale),
+                            ),
+                        );
+
+                        gl.draw_arrays(
+                            GL::TRIANGLE_FAN,
+                            match bits {
+                                3 | 12 => 4,
+                                9 | 6 => 8,
+                                _ => 0,
+                            },
+                            4,
+                        );
                     }
                 }
             }
