@@ -14,6 +14,7 @@ use crate::{
     gl_util::enable_buffer,
     params::Params,
     shape::{Idx, Shape},
+    wasm_util::console_log,
     xor128::Xor128,
 };
 
@@ -241,6 +242,88 @@ impl State {
                     );
 
                     gl.draw_arrays(GL::TRIANGLE_FAN, 0, 3);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn render_contours_gl(&self, gl: &GL) -> Result<(), JsValue> {
+        use crate::marching_squares::{line, pick_bits};
+
+        if !self.params.contour_lines {
+            return Ok(());
+        }
+
+        if let Some(ref temperature) = self.temperature {
+            let shader = self
+                .assets
+                .arrow_shader
+                .as_ref()
+                .ok_or_else(|| JsValue::from_str("Could not find rect_shader"))?;
+            gl.use_program(Some(&shader.program));
+
+            gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
+
+            let centerize = Matrix4::from_nonuniform_scale(2., -2., 2.)
+                * Matrix4::from_translation(Vector3::new(-0.5, -0.5, -0.5));
+
+            let shape = self.shape;
+
+            console_log!("Temperature ok");
+
+            enable_buffer(gl, &self.assets.rect_buffer, 2, shader.vertex_position);
+            const LEVELS: usize = 8;
+            for level in 1..LEVELS {
+                let threshold = level as f64 / LEVELS as f64;
+                // let red = (threshold * 127. + 128.) as u8;
+                // let blue = ((1. - threshold) * 127. + 128.) as u8;
+
+                for y in 0..shape.1 - 1 {
+                    for x in 0..shape.0 - 1 {
+                        if let Some(_) = line(pick_bits(
+                            temperature,
+                            shape,
+                            (x as isize, y as isize),
+                            threshold,
+                        )) {
+                            //     let idx = self
+                            //     .shape
+                            //     .idx(i * CELL_SIZE + CELL_SIZE / 2, j * CELL_SIZE + CELL_SIZE / 2);
+                            // let (vx, vy) = (self.vx[idx], self.vy[idx]);
+                            // let length2 = vx * vx + vy * vy;
+                            // let length = VELOCITY_SCALE
+                            //     * if MAX_VELOCITY * MAX_VELOCITY < length2 {
+                            //         MAX_VELOCITY
+                            //     } else {
+                            //         length2.sqrt()
+                            //     };
+
+                            // let scale = Matrix4::from_nonuniform_scale(
+                            //     length as f32 / self.shape.0 as f32,
+                            //     -length as f32 / self.shape.1 as f32,
+                            //     1.,
+                            // );
+
+                            // let rotation = Matrix4::from_angle_z(Rad(-vy.atan2(vx) as f32));
+
+                            let translation = Matrix4::from_translation(Vector3::new(
+                                (x) as f32 / self.shape.0 as f32,
+                                (y) as f32 / self.shape.1 as f32,
+                                0.,
+                            ));
+
+                            gl.uniform_matrix4fv_with_f32_array(
+                                shader.transform_loc.as_ref(),
+                                false,
+                                <Matrix4<f32> as AsRef<[f32; 16]>>::as_ref(
+                                    &(centerize * translation * Matrix4::from_scale(1e-2)),
+                                ),
+                            );
+
+                            gl.draw_arrays(GL::TRIANGLE_FAN, 0, 4);
+                        }
+                    }
                 }
             }
         }

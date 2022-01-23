@@ -70,6 +70,7 @@ impl Renderer for WebGLRenderer {
         self.gl.clear(GL::COLOR_BUFFER_BIT);
         state.put_image_gl(&self.gl, &data)?;
         state.render_velocity_field_gl(&self.gl)?;
+        state.render_contours_gl(&self.gl)?;
         Ok(())
     }
 }
