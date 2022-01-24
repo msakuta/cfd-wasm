@@ -41,19 +41,19 @@ async function run(module) {
   let params = {
     deltaTime: 1.0,
     skipFrames: 1,
-    visc: 1e-7,
-    diff: 1e-7,
+    visc: 2e-5,
+    diff: 2e-5,
     density: 50.0,
     decay: 0.01,
     mouseFlowSpeed: 0.75,
     boundaryFlowSpeed: 0.02,
-    temperature: false,
-    halfHeatSource: false,
+    temperature: true,
+    halfHeatSource: true,
     showContourLines: true,
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
     gamma: 1.0,
-    mouseFlow: true,
+    mouseFlow: false,
     showVelocity: true,
     showVelocityField: false,
     obstacle: false,
@@ -190,8 +190,8 @@ async function run(module) {
     slider.update(value);
   }
 
-  const buttonDefault = document.getElementById("buttonDefault");
-  buttonDefault.onclick = () => {
+  const buttonMouseFlow = document.getElementById("buttonMouseFlow");
+  buttonMouseFlow.onclick = () => {
     callInput(viscSlider, 1e-7);
     callInput(diffSlider, 1e-7);
     callInput(densitySlider, 50.);
