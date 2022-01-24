@@ -287,7 +287,7 @@ impl Assets {
         );
 
         // LINE_WIDTH won't work well with cargo fmt
-        const LW: f32 = 0.25;
+        const LW: f32 = 0.4;
 
         self.contour_buffer = create_buffer(
             &[

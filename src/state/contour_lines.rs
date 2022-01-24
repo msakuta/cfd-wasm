@@ -41,7 +41,7 @@ impl State {
                 let red = threshold * 0.5 + 0.5;
                 let blue = (1. - threshold) * 0.5 + 0.5;
 
-                gl.uniform4f(shader.color_loc.as_ref(), red as f32, 1.0, blue as f32, 0.5);
+                gl.uniform4f(shader.color_loc.as_ref(), red as f32, 1.0, blue as f32, 1.);
 
                 for y in 0..shape.1 - 1 {
                     for x in 0..shape.0 - 1 {
