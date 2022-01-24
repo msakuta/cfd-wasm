@@ -286,11 +286,18 @@ impl Assets {
             GL::DYNAMIC_DRAW,
         );
 
+        // LINE_WIDTH won't work well with cargo fmt
+        const LW: f32 = 0.25;
+
         self.contour_buffer = create_buffer(
             &[
                 [1., 1., -1., 1., -1., -1., 1., -1.],
-                [1., 0.5, -1., 0.5, -1., -0.5, 1., -0.5],
-                [0.5, 1., -0.5, 1.0, -0.5, -1., 0.5, -1.],
+                [1., LW, -1., LW, -1., -LW, 1., -LW],
+                [LW, 1., -LW, 1.0, -LW, -1., LW, -1.],
+                [-1., -LW, -LW, -1., LW, -1., -1., LW],
+                [LW, -1., 1., -LW, 1., LW, -LW, -1.],
+                [1., LW, LW, 1., -LW, 1., 1., -LW],
+                [-LW, 1., -1., LW, -1., -LW, LW, 1.],
             ]
             .flat(),
         )?;

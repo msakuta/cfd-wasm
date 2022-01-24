@@ -68,6 +68,10 @@ impl State {
                         gl.draw_arrays(
                             GL::TRIANGLE_FAN,
                             match bits {
+                                1 | 14 => 12,
+                                2 | 13 => 16,
+                                4 | 11 => 20,
+                                8 | 7 => 24,
                                 3 | 12 => 4,
                                 9 | 6 => 8,
                                 _ => 0,
