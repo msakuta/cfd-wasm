@@ -46,6 +46,9 @@ impl Renderer for CanvasRenderer {
         if state.params.particles {
             state.render_particles(data);
         }
+        if state.params.contour_lines && state.params.temperature {
+            state.render_contours(data);
+        }
         self.ctx.put_image_data(&image_data, 0., 0.)?;
         state.render_velocity_field(&self.ctx);
         Ok(())
@@ -67,6 +70,7 @@ impl Renderer for WebGLRenderer {
         self.gl.clear(GL::COLOR_BUFFER_BIT);
         state.put_image_gl(&self.gl, &data)?;
         state.render_velocity_field_gl(&self.gl)?;
+        state.render_contours_gl(&self.gl)?;
         Ok(())
     }
 }
@@ -262,6 +266,9 @@ fn cfd_temp(
         assign_check("temperature", &mut |value| state.params.temperature = value);
         assign_check("halfHeatSource", &mut |value| {
             state.params.half_heat_source = value
+        });
+        assign_check("showContourLines", &mut |value| {
+            state.params.contour_lines = value
         });
         assign_state("heatExchangeRate", &mut |value| {
             state.params.heat_exchange_rate = value

@@ -1,6 +1,7 @@
 //! Definition of simulation state and its update logic
 
 mod cfd;
+mod contour_lines;
 pub(crate) mod particles;
 mod renderer;
 

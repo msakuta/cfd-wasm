@@ -41,18 +41,19 @@ async function run(module) {
   let params = {
     deltaTime: 1.0,
     skipFrames: 1,
-    visc: 1e-7,
-    diff: 1e-7,
+    visc: 2e-5,
+    diff: 2e-5,
     density: 50.0,
     decay: 0.01,
     mouseFlowSpeed: 0.75,
     boundaryFlowSpeed: 0.02,
-    temperature: false,
-    halfHeatSource: false,
+    temperature: true,
+    halfHeatSource: true,
+    showContourLines: true,
     heatExchangeRate: 0.1,
     heatBuoyancy: 0.05,
     gamma: 1.0,
-    mouseFlow: true,
+    mouseFlow: false,
     showVelocity: true,
     showVelocityField: false,
     obstacle: false,
@@ -163,6 +164,7 @@ async function run(module) {
   const dyeFromObstacleCheck = checkboxInit("dyeFromObstacle", value => params.dyeFromObstacle = value);
   const temperatureCheck = checkboxInit("temperature", value => params.temperature = value);
   const halfHeatSourceCheck = checkboxInit("halfHeatSource", value => params.halfHeatSource = value);
+  const showContourLinesCheck = checkboxInit("showContourLines", value => params.showContourLines = value);
   const heatExchangeRateSlider = sliderInit("heatExchangeRate", "heatExchangeRateLabel", value => params.heatExchangeRate = value);
   const heatBuoyancySlider = sliderInit("heatBuoyancy", "heatBuoyancyLabel", value => params.heatBuoyancy = value, true);
   const gammaSlider = sliderInit("gamma", "gammaLabel", value => params.gamma = value, true);
@@ -188,8 +190,8 @@ async function run(module) {
     slider.update(value);
   }
 
-  const buttonDefault = document.getElementById("buttonDefault");
-  buttonDefault.onclick = () => {
+  const buttonMouseFlow = document.getElementById("buttonMouseFlow");
+  buttonMouseFlow.onclick = () => {
     callInput(viscSlider, 1e-7);
     callInput(diffSlider, 1e-7);
     callInput(densitySlider, 50.);
@@ -197,6 +199,7 @@ async function run(module) {
     callInput(obstacleCheck, false);
     callInput(temperatureCheck, false);
     callInput(halfHeatSourceCheck, false);
+    callInput(showContourLinesCheck, false);
     callInput(fixedXCheck, true);
   };
 
@@ -210,6 +213,7 @@ async function run(module) {
     callInput(obstacleCheck, false);
     callInput(temperatureCheck, true);
     callInput(halfHeatSourceCheck, true);
+    callInput(showContourLinesCheck, true);
     callInput(fixedXCheck, true);
   };
 
@@ -222,6 +226,7 @@ async function run(module) {
     callInput(obstacleCheck, true);
     callInput(temperatureCheck, false);
     callInput(halfHeatSourceCheck, false);
+    callInput(showContourLinesCheck, false);
     callInput(flowXCheck, true);
   };
 

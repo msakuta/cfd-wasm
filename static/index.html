@@ -42,7 +42,7 @@
           <button id="buttonResetParticles">Reset particles</button>
         </div>
         <div>Parameter Presets:
-          <button id="buttonDefault">Default</button>
+          <button id="buttonMouseFlow">Mouse flow</button>
           <button id="buttonHeat">Heat convection</button>
           <button id="buttonKarman">Karman vortex street</button>
         </div>
@@ -62,11 +62,11 @@
         </div>
         <div>
           Viscosity \(\nu=\)<span id="viscLabel"></span>
-          <input id="visc" type="range" max="1e-4" min="1e-7" step="1e-7" value="1e-7">
+          <input id="visc" type="range" max="1e-4" min="1e-7" step="1e-7" value="2e-5">
         </div>
         <div>
           Diffusion \(\kappa=\)<span id="diffLabel"></span>
-          <input id="diff" type="range" max="1e-4" min="1e-7" step="1e-7" value="1e-7">
+          <input id="diff" type="range" max="1e-4" min="1e-7" step="1e-7" value="2e-5">
         </div>
         <div>
           dye density=<span id="densityLabel"></span>
@@ -102,6 +102,12 @@
           <label>
             <input type="checkbox" id="halfHeatSource">
             Half heat source
+          </label>
+        </div>
+        <div>
+          <label>
+            <input type="checkbox" id="showContourLines">
+            Show contour lines
           </label>
         </div>
         <div>

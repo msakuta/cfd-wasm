@@ -7,6 +7,7 @@ use super::{
     wasm_util::{console_log, AngleInstancedArrays},
 };
 use crate::shader_bundle::ShaderBundle;
+use slice_of_array::SliceFlatExt;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{WebGlBuffer, WebGlRenderingContext as GL, WebGlTexture};
@@ -20,10 +21,13 @@ pub(crate) struct Assets {
     pub particle_instancing_shader: Option<ShaderBundle>,
     pub arrow_shader: Option<ShaderBundle>,
     pub trail_shader: Option<ShaderBundle>,
+    pub contour_shader: Option<ShaderBundle>,
+
     pub trail_buffer: Option<WebGlBuffer>,
     pub rect_buffer: Option<WebGlBuffer>,
     pub arrow_buffer: Option<WebGlBuffer>,
     pub particle_buffer: Option<WebGlBuffer>,
+    pub contour_buffer: Option<WebGlBuffer>,
 }
 
 impl Default for Assets {
@@ -37,10 +41,12 @@ impl Default for Assets {
             particle_instancing_shader: None,
             arrow_shader: None,
             trail_shader: None,
+            contour_shader: None,
             trail_buffer: None,
             rect_buffer: None,
             arrow_buffer: None,
             particle_buffer: None,
+            contour_buffer: None,
         }
     }
 }
@@ -198,6 +204,24 @@ impl Assets {
         gl.uniform1f(shader.alpha_loc.as_ref(), 0.5);
         self.arrow_shader = Some(shader);
 
+        let frag_shader_color = compile_shader(
+            &gl,
+            GL::FRAGMENT_SHADER,
+            r#"
+            precision mediump float;
+
+            uniform vec4 color;
+
+            void main() {
+                gl_FragColor = color;
+            }
+        "#,
+        )?;
+        let program = link_program(&gl, &vert_shader, &frag_shader_color)?;
+        let shader = ShaderBundle::new(&gl, program);
+        gl.uniform4f(shader.color_loc.as_ref(), 1.0, 1.0, 1.0, 0.5);
+        self.contour_shader = Some(shader);
+
         let vert_shader = compile_shader(
             &gl,
             GL::VERTEX_SHADER,
@@ -241,17 +265,18 @@ impl Assets {
             0,
         );
 
+        let create_buffer = |data| -> Result<_, JsValue> {
+            let buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
+            gl.bind_buffer(GL::ARRAY_BUFFER, buffer.as_ref());
+            vertex_buffer_data(&gl, data);
+            Ok(buffer)
+        };
+
         self.trail_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
 
-        self.rect_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-        gl.bind_buffer(GL::ARRAY_BUFFER, self.rect_buffer.as_ref());
-        let rect_vertices: [f32; 8] = [1., 1., -1., 1., -1., -1., 1., -1.];
-        vertex_buffer_data(&gl, &rect_vertices);
+        self.rect_buffer = create_buffer(&[1., 1., -1., 1., -1., -1., 1., -1.])?;
 
-        self.arrow_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
-        gl.bind_buffer(GL::ARRAY_BUFFER, self.arrow_buffer.as_ref());
-        let arrow_vertices: [f32; 6] = [1., 0., -1., -0.2, -1., 0.2];
-        vertex_buffer_data(&gl, &arrow_vertices);
+        self.arrow_buffer = create_buffer(&[1., 0., -1., -0.2, -1., 0.2])?;
 
         self.particle_buffer = Some(gl.create_buffer().ok_or("failed to create buffer")?);
         gl.bind_buffer(GL::ARRAY_BUFFER, self.particle_buffer.as_ref());
@@ -260,6 +285,22 @@ impl Assets {
             (PARTICLE_COUNT * 3 * std::mem::size_of::<f32>() * (1 + PARTICLE_MAX_TRAIL_LEN)) as i32,
             GL::DYNAMIC_DRAW,
         );
+
+        // LINE_WIDTH won't work well with cargo fmt
+        const LW: f32 = 0.4;
+
+        self.contour_buffer = create_buffer(
+            &[
+                [1., 1., -1., 1., -1., -1., 1., -1.],
+                [1., LW, -1., LW, -1., -LW, 1., -LW],
+                [LW, 1., -LW, 1.0, -LW, -1., LW, -1.],
+                [-1., -LW, -LW, -1., LW, -1., -1., LW],
+                [LW, -1., 1., -LW, 1., LW, -LW, -1.],
+                [1., LW, LW, 1., -LW, 1., 1., -LW],
+                [-LW, 1., -1., LW, -1., -LW, LW, 1.],
+            ]
+            .flat(),
+        )?;
 
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
 
