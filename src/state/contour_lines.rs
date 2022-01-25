@@ -1,7 +1,7 @@
 use super::State;
 use crate::{
     gl_util::enable_buffer,
-    marching_squares::{line, pick_bits},
+    marching_squares::{border_pixel, cell_polygon_index, pick_bits},
     shape::Idx,
 };
 use cgmath::{Matrix4, Vector3};
@@ -65,19 +65,7 @@ impl State {
                             ),
                         );
 
-                        gl.draw_arrays(
-                            GL::TRIANGLE_FAN,
-                            match bits {
-                                1 | 14 => 12,
-                                2 | 13 => 16,
-                                4 | 11 => 20,
-                                8 | 7 => 24,
-                                3 | 12 => 4,
-                                9 | 6 => 8,
-                                _ => 0,
-                            },
-                            4,
-                        );
+                        gl.draw_arrays(GL::TRIANGLE_FAN, cell_polygon_index(bits), 4);
                     }
                 }
             }
@@ -99,7 +87,7 @@ impl State {
             let blue = ((1. - threshold) * 127. + 128.) as u8;
             for y in 0..shape.1 - 1 {
                 for x in 0..shape.0 - 1 {
-                    if let Some(_) = line(pick_bits(
+                    if border_pixel(pick_bits(
                         temperature,
                         *shape,
                         (x as isize, y as isize),

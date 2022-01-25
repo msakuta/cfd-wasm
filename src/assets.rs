@@ -6,7 +6,7 @@ use super::{
     state::particles::{PARTICLE_COUNT, PARTICLE_MAX_TRAIL_LEN},
     wasm_util::{console_log, AngleInstancedArrays},
 };
-use crate::shader_bundle::ShaderBundle;
+use crate::{marching_squares::CELL_POLYGON_BUFFER, shader_bundle::ShaderBundle};
 use slice_of_array::SliceFlatExt;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -286,21 +286,7 @@ impl Assets {
             GL::DYNAMIC_DRAW,
         );
 
-        // LINE_WIDTH won't work well with cargo fmt
-        const LW: f32 = 0.4;
-
-        self.contour_buffer = create_buffer(
-            &[
-                [1., 1., -1., 1., -1., -1., 1., -1.],
-                [1., LW, -1., LW, -1., -LW, 1., -LW],
-                [LW, 1., -LW, 1.0, -LW, -1., LW, -1.],
-                [-1., -LW, -LW, -1., LW, -1., -1., LW],
-                [LW, -1., 1., -LW, 1., LW, -LW, -1.],
-                [1., LW, LW, 1., -LW, 1., 1., -LW],
-                [-LW, 1., -1., LW, -1., -LW, LW, 1.],
-            ]
-            .flat(),
-        )?;
+        self.contour_buffer = create_buffer(CELL_POLYGON_BUFFER.flat())?;
 
         gl.clear_color(0.0, 0.2, 0.5, 1.0);
 

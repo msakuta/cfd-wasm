@@ -7,24 +7,39 @@ pub(crate) fn pick_bits(f: &[f64], shape: Shape, pos: (isize, isize), threshold:
         | (((f[shape.idx(pos.0, pos.1 + 1)] > threshold) as u8) << 3)
 }
 
-pub(crate) fn line(idx: u8) -> Option<[[f64; 2]; 2]> {
+/// LINE_WIDTH won't work well with cargo fmt
+const LW: f32 = 0.4;
+
+/// buffer for vertex shader, use with SliceFlatExt::flat()
+pub(crate) const CELL_POLYGON_BUFFER: [[f32; 8]; 7] = [
+    [1., 1., -1., 1., -1., -1., 1., -1.],
+    [1., LW, -1., LW, -1., -LW, 1., -LW],
+    [LW, 1., -LW, 1.0, -LW, -1., LW, -1.],
+    [-1., -LW, -LW, -1., LW, -1., -1., LW],
+    [LW, -1., 1., -LW, 1., LW, -LW, -1.],
+    [1., LW, LW, 1., -LW, 1., 1., -LW],
+    [-LW, 1., -1., LW, -1., -LW, LW, 1.],
+];
+
+/// Index into CELL_POLYGON_BUFFER
+pub(crate) fn cell_polygon_index(bits: u8) -> i32 {
+    match bits {
+        1 | 14 => 12,
+        2 | 13 => 16,
+        4 | 11 => 20,
+        8 | 7 => 24,
+        3 | 12 => 4,
+        9 | 6 => 8,
+        _ => 0,
+    }
+}
+
+/// Whether the pixel is a border
+pub(crate) fn border_pixel(idx: u8) -> bool {
     match idx {
-        0 => None,
-        1 => Some([[0.5, 0.], [0., 0.5]]),
-        2 => Some([[0.5, 0.], [1., 0.5]]),
-        3 => Some([[0., 0.5], [1., 0.5]]),
-        4 => Some([[1., 0.5], [0.5, 1.]]),
-        5 => Some([[1., 0.5], [0.5, 1.]]),
-        6 => Some([[0.5, 0.], [0.5, 1.]]),
-        7 => Some([[0.5, 1.], [0., 0.5]]),
-        8 => Some([[0.5, 1.], [0., 0.5]]),
-        9 => Some([[0.5, 0.], [0.5, 1.]]),
-        10 => Some([[1., 0.5], [0.5, 1.]]),
-        11 => Some([[1., 0.5], [0.5, 1.]]),
-        12 => Some([[0., 0.5], [1., 0.5]]),
-        13 => Some([[0.5, 0.], [1., 0.5]]),
-        14 => Some([[0.5, 0.], [1., 0.5]]),
-        15 => None,
+        0 => false,
+        1..=14 => true,
+        15 => false,
         _ => panic!("index must be in 0-15!"),
     }
 }
